@@ -84,6 +84,8 @@ jobs:
         run: bash ./scripts/tests/check-compile-regressions.sh
       - name: Check app compile regressions
         run: bash ./scripts/tests/check-app-compile-regressions.sh
+      - name: Check MINA Android runtime setup
+        run: bash ./scripts/tests/check-mina-android-runtime.sh
 
       - name: Resolve Android version name
         shell: bash

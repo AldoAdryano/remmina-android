@@ -16,7 +16,7 @@
 - Repository: public.
 - Third-party source keeps its original license and notices.
 - `minSdk = 26`.
-- `compileSdk = 37`.
+- `compileSdk = 36`.
 - `targetSdk = 36`.
 - Primary target device: POCO X7 Pro running Android 16.
 - UI: Jetpack Compose.
@@ -63,7 +63,7 @@ agp = "9.3.0"
 ksp = "2.3.9"
 composeBom = "2026.06.00"
 activityCompose = "1.13.0"
-lifecycle = "2.11.0"
+lifecycle = "2.10.0"
 navigation = "2.9.8"
 room = "2.8.4"
 datastore = "1.2.1"

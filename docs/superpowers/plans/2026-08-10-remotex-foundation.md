@@ -12,7 +12,7 @@
 
 - Application ID: `com.remotex.android`.
 - App name: `RemoteX`.
-- `minSdk = 26`, `compileSdk = 37`, `targetSdk = 36`.
+- `minSdk = 26`, `compileSdk = 36`, `targetSdk = 36`.
 - Public MIT repository.
 - No hard-coded personal server data.
 - No plaintext credentials.
@@ -124,13 +124,13 @@ agp = "9.3.0"
 ksp = "2.3.9"
 compose-bom = "2026.06.00"
 activity = "1.13.0"
-lifecycle = "2.11.0"
+lifecycle = "2.10.0"
 navigation = "2.9.8"
 room = "2.8.4"
 datastore = "1.2.1"
 work = "2.11.2"
 biometric = "1.1.0"
-core = "1.19.0"
+core = "1.17.0"
 junit = "4.13.2"
 androidx-test-core = "1.7.0"
 androidx-test-runner = "1.7.0"
@@ -191,7 +191,7 @@ Core values:
 ```kotlin
 android {
     namespace = "com.remotex.android"
-    compileSdk = 37
+    compileSdk = 36
 
     defaultConfig {
         applicationId = "com.remotex.android"

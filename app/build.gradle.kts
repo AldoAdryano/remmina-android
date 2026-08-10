@@ -5,7 +5,7 @@ plugins {
 
 android {
     namespace = "com.remotex.android"
-    compileSdk = 37
+    compileSdk = 36
 
     defaultConfig {
         applicationId = "com.remotex.android"

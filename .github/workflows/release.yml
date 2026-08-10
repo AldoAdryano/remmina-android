@@ -90,6 +90,9 @@ jobs:
       - name: Check SFTP IO dispatch
         run: bash ./scripts/tests/check-sftp-io-dispatch.sh
 
+      - name: Check stable debug signing source
+        run: bash ./scripts/tests/check-stable-debug-signing.sh
+
       - name: Resolve Android version name
         shell: bash
         run: echo "REMOTEX_VERSION_NAME=${RELEASE_TAG#v}" >> "$GITHUB_ENV"

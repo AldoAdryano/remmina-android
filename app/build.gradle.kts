@@ -34,24 +34,24 @@ android {
         resources.excludes += setOf("META-INF/DEPENDENCIES", "META-INF/LICENSE*", "META-INF/NOTICE*")
     }
 
-    val releaseKeystorePath = providers.environmentVariable("REMOTEX_KEYSTORE_PATH").orNull
-    val releaseKeystorePassword = providers.environmentVariable("REMOTEX_KEYSTORE_PASSWORD").orNull
-    val releaseKeyAlias = providers.environmentVariable("REMOTEX_KEY_ALIAS").orNull
-    val releaseKeyPassword = providers.environmentVariable("REMOTEX_KEY_PASSWORD").orNull
-    val releaseSigningAvailable = listOf(
-        releaseKeystorePath,
-        releaseKeystorePassword,
-        releaseKeyAlias,
-        releaseKeyPassword,
+    val persistentKeystorePath = providers.environmentVariable("REMOTEX_KEYSTORE_PATH").orNull
+    val persistentKeystorePassword = providers.environmentVariable("REMOTEX_KEYSTORE_PASSWORD").orNull
+    val persistentKeyAlias = providers.environmentVariable("REMOTEX_KEY_ALIAS").orNull
+    val persistentKeyPassword = providers.environmentVariable("REMOTEX_KEY_PASSWORD").orNull
+    val persistentSigningAvailable = listOf(
+        persistentKeystorePath,
+        persistentKeystorePassword,
+        persistentKeyAlias,
+        persistentKeyPassword,
     ).all { !it.isNullOrBlank() }
 
     signingConfigs {
-        if (releaseSigningAvailable) {
-            create("release") {
-                storeFile = file(requireNotNull(releaseKeystorePath))
-                storePassword = releaseKeystorePassword
-                keyAlias = releaseKeyAlias
-                keyPassword = releaseKeyPassword
+        if (persistentSigningAvailable) {
+            create("remotex") {
+                storeFile = file(requireNotNull(persistentKeystorePath))
+                storePassword = persistentKeystorePassword
+                keyAlias = persistentKeyAlias
+                keyPassword = persistentKeyPassword
             }
         }
     }
@@ -60,11 +60,14 @@ android {
         getByName("debug") {
             applicationIdSuffix = ".debug"
             versionNameSuffix = "-debug"
+            if (persistentSigningAvailable) {
+                signingConfig = signingConfigs.getByName("remotex")
+            }
         }
         getByName("release") {
             isMinifyEnabled = false
-            if (releaseSigningAvailable) {
-                signingConfig = signingConfigs.getByName("release")
+            if (persistentSigningAvailable) {
+                signingConfig = signingConfigs.getByName("remotex")
             }
         }
     }

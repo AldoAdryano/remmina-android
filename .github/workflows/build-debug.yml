@@ -49,6 +49,9 @@ jobs:
       - name: Check Compose scoped imports
         run: bash ./scripts/tests/check-compose-scope-imports.sh
 
+      - name: Check Kotlin compile regressions
+        run: bash ./scripts/tests/check-compile-regressions.sh
+
       - name: Unit tests, lint, and debug APK
         run: gradle --no-daemon testDebugUnitTest lintDebug assembleDebug --stacktrace
 

@@ -80,6 +80,9 @@ jobs:
       - name: Check repository for secrets
         run: ./scripts/check-secrets.sh
 
+      - name: Check Kotlin compile regressions
+        run: bash ./scripts/tests/check-compile-regressions.sh
+
       - name: Resolve Android version name
         shell: bash
         run: echo "REMOTEX_VERSION_NAME=${RELEASE_TAG#v}" >> "$GITHUB_ENV"

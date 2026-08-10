@@ -162,8 +162,11 @@ class MinaSshEngine(
             MinaSftpTransport(SftpClientFactory.instance().createSftpClient(session))
         }
 
-        override suspend fun close() = withContext(Dispatchers.IO) {
-            runCatching { session.close(false) }
+        override suspend fun close() {
+            withContext(Dispatchers.IO) {
+                runCatching { session.close(false) }
+                Unit
+            }
         }
     }
 }

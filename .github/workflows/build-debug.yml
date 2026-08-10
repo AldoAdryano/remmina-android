@@ -56,6 +56,9 @@ jobs:
       - name: Check MINA Android runtime setup
         run: bash ./scripts/tests/check-mina-android-runtime.sh
 
+      - name: Check SFTP IO dispatch
+        run: bash ./scripts/tests/check-sftp-io-dispatch.sh
+
       - name: Unit tests, lint, and debug APK
         run: gradle --no-daemon testDebugUnitTest lintDebug assembleDebug --stacktrace
 

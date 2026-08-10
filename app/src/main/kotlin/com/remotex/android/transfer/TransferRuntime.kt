@@ -204,7 +204,12 @@ class RemoteXTransferWorker(
         )
         return try {
             TransferExecutor.execute(applicationContext, request) { done, total ->
-                setProgress(Data.Builder().putLong("bytes", done).putLong("total", total ?: -1L).build())
+                setProgressAsync(
+                    Data.Builder()
+                        .putLong("bytes", done)
+                        .putLong("total", total ?: -1L)
+                        .build()
+                )
             }
             Result.success()
         } catch (cancelled: CancellationException) {

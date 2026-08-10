@@ -51,6 +51,8 @@ jobs:
 
       - name: Check Kotlin compile regressions
         run: bash ./scripts/tests/check-compile-regressions.sh
+      - name: Check app compile regressions
+        run: bash ./scripts/tests/check-app-compile-regressions.sh
 
       - name: Unit tests, lint, and debug APK
         run: gradle --no-daemon testDebugUnitTest lintDebug assembleDebug --stacktrace

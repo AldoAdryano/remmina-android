@@ -130,7 +130,12 @@ private fun ProfileLoader(container: AppContainer, id: Long, content: @Composabl
     val profile by produceState<ConnectionProfile?>(initialValue = null, id) {
         value = container.profileRepository.findById(id)
     }
-    profile?.let(content) ?: Loading()
+    val loadedProfile = profile
+    if (loadedProfile != null) {
+        content(loadedProfile)
+    } else {
+        Loading()
+    }
 }
 
 @Composable
@@ -149,12 +154,15 @@ private fun VncRoute(profile: ConnectionProfile, container: AppContainer, onBack
         }
     }
     LaunchedEffect(state) {
-        if (state is VncSessionState.Connected) {
-            container.profileRepository.markConnected(profile.id)
-            container.logger.event("vnc_connected", mapOf("profileId" to profile.id, "host" to profile.host, "port" to profile.vncPort))
-        }
-        if (state is VncSessionState.Failed) {
-            container.logger.event("vnc_failed", mapOf("profileId" to profile.id, "reason" to state.reason))
+        when (val currentState = state) {
+            is VncSessionState.Connected -> {
+                container.profileRepository.markConnected(profile.id)
+                container.logger.event("vnc_connected", mapOf("profileId" to profile.id, "host" to profile.host, "port" to profile.vncPort))
+            }
+            is VncSessionState.Failed -> {
+                container.logger.event("vnc_failed", mapOf("profileId" to profile.id, "reason" to currentState.reason))
+            }
+            else -> Unit
         }
     }
 
@@ -187,12 +195,15 @@ private fun SshRoute(profile: ConnectionProfile, container: AppContainer, onBack
         }
     }
     LaunchedEffect(state) {
-        if (state is SshSessionState.Connected) {
-            container.profileRepository.markConnected(profile.id)
-            container.logger.event("ssh_connected", mapOf("profileId" to profile.id, "host" to profile.host, "port" to profile.sshPort))
-        }
-        if (state is SshSessionState.Failed) {
-            container.logger.event("ssh_failed", mapOf("profileId" to profile.id, "reason" to state.reason))
+        when (val currentState = state) {
+            is SshSessionState.Connected -> {
+                container.profileRepository.markConnected(profile.id)
+                container.logger.event("ssh_connected", mapOf("profileId" to profile.id, "host" to profile.host, "port" to profile.sshPort))
+            }
+            is SshSessionState.Failed -> {
+                container.logger.event("ssh_failed", mapOf("profileId" to profile.id, "reason" to currentState.reason))
+            }
+            else -> Unit
         }
     }
 
@@ -242,12 +253,15 @@ private fun SftpRoute(profile: ConnectionProfile, container: AppContainer, onBac
         }
     }
     LaunchedEffect(state) {
-        if (state is SshSessionState.Connected) {
-            container.profileRepository.markConnected(profile.id)
-            container.logger.event("sftp_connected", mapOf("profileId" to profile.id, "host" to profile.host, "port" to profile.sshPort))
-        }
-        if (state is SshSessionState.Failed) {
-            container.logger.event("sftp_failed", mapOf("profileId" to profile.id, "reason" to state.reason))
+        when (val currentState = state) {
+            is SshSessionState.Connected -> {
+                container.profileRepository.markConnected(profile.id)
+                container.logger.event("sftp_connected", mapOf("profileId" to profile.id, "host" to profile.host, "port" to profile.sshPort))
+            }
+            is SshSessionState.Failed -> {
+                container.logger.event("sftp_failed", mapOf("profileId" to profile.id, "reason" to currentState.reason))
+            }
+            else -> Unit
         }
     }
 

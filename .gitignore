@@ -1,0 +1,17 @@
+.worktrees/
+.gradle/
+.idea/
+build/
+**/build/
+local.properties
+*.iml
+*.jks
+*.keystore
+*.pem
+*.key
+.env
+.env.*
+secrets.properties
+**/connections-export*.json
+**/remotex-profiles*.json
+.DS_Store

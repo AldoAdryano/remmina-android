@@ -96,6 +96,9 @@ jobs:
       - name: Check VNC input stability
         run: bash ./scripts/tests/check-vnc-input-stability.sh
 
+      - name: Check remote audio source
+        run: bash ./scripts/tests/check-remote-audio-source.sh
+
       - name: Unit tests, lint, and debug APK
         run: gradle --no-daemon testDebugUnitTest lintDebug assembleDebug --stacktrace
 

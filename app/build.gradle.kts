@@ -82,6 +82,7 @@ dependencies {
     implementation(project(":feature:home"))
     implementation(project(":feature:connections"))
     implementation(project(":feature:vnc"))
+    implementation(project(":feature:audio"))
     implementation(project(":feature:ssh"))
     implementation(project(":feature:sftp"))
     implementation(project(":feature:settings"))

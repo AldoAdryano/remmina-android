@@ -1,5 +1,6 @@
 package com.remotex.feature.ssh.engine
 
+import com.remotex.feature.ssh.domain.ExecChannel
 import com.remotex.feature.ssh.domain.SftpTransport
 import com.remotex.feature.ssh.domain.ShellChannel
 import com.remotex.feature.ssh.domain.SshAuth
@@ -21,6 +22,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.withContext
 import org.apache.sshd.client.SshClient
+import org.apache.sshd.client.channel.ChannelExec
 import org.apache.sshd.client.channel.ChannelShell
 import org.apache.sshd.client.keyverifier.ServerKeyVerifier
 import org.apache.sshd.client.session.ClientSession
@@ -143,6 +145,18 @@ class MinaSshEngine(
     private inner class MinaSessionHandle(
         private val session: ClientSession,
     ) : SshSessionHandle {
+        override suspend fun openExec(command: String): ExecChannel = withContext(Dispatchers.IO) {
+            require(command.isNotBlank()) { "Perintah SSH kosong" }
+            val channel: ChannelExec = session.createExecChannel(command)
+            channel.setUsePty(false)
+            channel.open().verify(timeout)
+            MinaExecChannel(
+                channel = channel,
+                stdoutStream = channel.invertedOut,
+                stderrStream = channel.invertedErr,
+            )
+        }
+
         override suspend fun openShell(term: String, columns: Int, rows: Int): ShellChannel = withContext(Dispatchers.IO) {
             val channel: ChannelShell = session.createShellChannel()
             channel.setUsePty(true)

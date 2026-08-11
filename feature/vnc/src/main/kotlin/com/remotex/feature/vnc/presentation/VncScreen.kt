@@ -72,6 +72,11 @@ fun VncScreen(
     viewModel: VncViewModel,
     title: String,
     onBack: () -> Unit,
+    showAudioControl: Boolean = false,
+    audioPlaying: Boolean = false,
+    audioConnecting: Boolean = false,
+    audioMessage: String? = null,
+    onAudioToggle: () -> Unit = {},
 ) {
     val context = LocalContext.current
     val activity = context as? Activity
@@ -166,6 +171,10 @@ fun VncScreen(
         val message = statusMessage ?: return@LaunchedEffect
         delay(2_500)
         if (statusMessage == message) statusMessage = null
+    }
+
+    LaunchedEffect(audioMessage) {
+        if (!audioMessage.isNullOrBlank()) statusMessage = audioMessage
     }
 
     LaunchedEffect(viewModel, context) {
@@ -317,6 +326,18 @@ fun VncScreen(
                     ) {
                         keepControlsVisible()
                         cycleScaleMode()
+                    }
+                    if (showAudioControl) {
+                        ToolButton(
+                            when {
+                                audioConnecting -> "Audio…"
+                                audioPlaying -> "Bisukan"
+                                else -> "Suara"
+                            },
+                        ) {
+                            keepControlsVisible()
+                            onAudioToggle()
+                        }
                     }
                     ToolButton(if (fullscreen) "Jendela" else "Fullscreen") {
                         keepControlsVisible()

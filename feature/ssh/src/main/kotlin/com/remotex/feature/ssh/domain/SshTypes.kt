@@ -35,6 +35,12 @@ sealed interface SshSessionState {
     data object Closed : SshSessionState
 }
 
+interface ExecChannel {
+    val stdout: Flow<ByteArray>
+    val stderr: Flow<ByteArray>
+    suspend fun close()
+}
+
 interface ShellChannel {
     val stdout: Flow<ByteArray>
     val stderr: Flow<ByteArray>
@@ -65,6 +71,7 @@ interface SftpTransport {
 }
 
 interface SshSessionHandle {
+    suspend fun openExec(command: String): ExecChannel
     suspend fun openShell(term: String = "xterm-256color", columns: Int = 80, rows: Int = 24): ShellChannel
     suspend fun openSftpTransport(): SftpTransport
     suspend fun close()

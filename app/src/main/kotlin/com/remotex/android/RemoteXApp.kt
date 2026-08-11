@@ -8,8 +8,10 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -29,6 +31,9 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.remotex.core.model.ConnectionProfile
+import com.remotex.feature.audio.RemoteAudioState
+import com.remotex.feature.audio.RemoteAudioViewModel
+import com.remotex.feature.audio.SshPcmAudioEngine
 import com.remotex.core.model.CredentialPolicy
 import com.remotex.feature.connections.ConnectionEditorScreen
 import com.remotex.feature.home.HomeScreen
@@ -140,12 +145,25 @@ private fun ProfileLoader(container: AppContainer, id: Long, content: @Composabl
 
 @Composable
 private fun VncRoute(profile: ConnectionProfile, container: AppContainer, onBack: () -> Unit) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
     val vm = remember(profile.id) { VncViewModel(RfbVncEngine()) }
+    val audioVm = remember(profile.id) {
+        RemoteAudioViewModel(SshPcmAudioEngine(context.applicationContext, container.newSshEngine()))
+    }
     val state by vm.sessionState.collectAsState()
+    val audioState by audioVm.state.collectAsState()
     var needsPrompt by remember(profile.id) { mutableStateOf(profile.credentialPolicy == CredentialPolicy.ALWAYS_ASK) }
     var attemptedSaved by remember(profile.id) { mutableStateOf(false) }
+    var audioNeedsPrompt by remember(profile.id) { mutableStateOf(false) }
+    var audioNotice by remember(profile.id) { mutableStateOf<String?>(null) }
 
-    DisposableEffect(vm) { onDispose { vm.disconnect() } }
+    DisposableEffect(vm, audioVm) {
+        onDispose {
+            audioVm.stop()
+            vm.disconnect()
+        }
+    }
     LaunchedEffect(profile.id, profile.credentialPolicy) {
         if (profile.credentialPolicy == CredentialPolicy.SAVE_SECURELY && !attemptedSaved) {
             attemptedSaved = true
@@ -165,6 +183,43 @@ private fun VncRoute(profile: ConnectionProfile, container: AppContainer, onBack
             else -> Unit
         }
     }
+    LaunchedEffect(audioState) {
+        audioNotice = when (val current = audioState) {
+            RemoteAudioState.Connecting -> "Menyambungkan audio…"
+            RemoteAudioState.Playing -> "Audio remote aktif"
+            is RemoteAudioState.Failed -> current.reason
+            RemoteAudioState.Idle -> audioNotice
+        }
+    }
+
+    fun startAudio(auth: SshAuth) {
+        audioNeedsPrompt = false
+        audioNotice = null
+        audioVm.start(SshConnectionSpec(profile.host, profile.sshPort, profile.username, auth))
+    }
+
+    fun requestAudio() {
+        when (audioState) {
+            RemoteAudioState.Connecting, RemoteAudioState.Playing -> {
+                audioVm.stop()
+                audioNotice = "Audio dimatikan"
+            }
+            else -> {
+                if (!profile.sshEnabled) {
+                    audioNotice = "Aktifkan SSH pada profil untuk audio"
+                    return
+                }
+                if (profile.credentialPolicy == CredentialPolicy.SAVE_SECURELY) {
+                    scope.launch {
+                        val auth = container.savedSshAuth(profile)
+                        if (auth == null) audioNeedsPrompt = true else startAudio(auth)
+                    }
+                } else {
+                    audioNeedsPrompt = true
+                }
+            }
+        }
+    }
 
     if (needsPrompt) {
         PasswordPrompt("Password VNC • ${profile.name}") { password ->
@@ -172,7 +227,31 @@ private fun VncRoute(profile: ConnectionProfile, container: AppContainer, onBack
             vm.connect(profile.host, profile.vncPort, password)
         }
     } else {
-        VncScreen(vm, profile.name, onBack)
+        Box(Modifier.fillMaxSize()) {
+            VncScreen(
+                viewModel = vm,
+                title = profile.name,
+                onBack = onBack,
+                showAudioControl = true,
+                audioPlaying = audioState is RemoteAudioState.Playing,
+                audioConnecting = audioState is RemoteAudioState.Connecting,
+                audioMessage = audioNotice,
+                onAudioToggle = ::requestAudio,
+            )
+            if (audioNeedsPrompt) {
+                AlertDialog(
+                    onDismissRequest = { audioNeedsPrompt = false },
+                    confirmButton = {},
+                    dismissButton = {
+                        TextButton(onClick = { audioNeedsPrompt = false }) { Text("Batal") }
+                    },
+                    title = { Text("Audio melalui SSH") },
+                    text = {
+                        SshAuthPrompt(profile.authenticationMode) { auth -> startAudio(auth) }
+                    },
+                )
+            }
+        }
     }
 }
 

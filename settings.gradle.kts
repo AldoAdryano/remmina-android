@@ -26,6 +26,7 @@ include(
     ":feature:connections",
     ":feature:vnc",
     ":feature:audio",
+    ":feature:watch",
     ":feature:ssh",
     ":feature:sftp",
     ":feature:settings",

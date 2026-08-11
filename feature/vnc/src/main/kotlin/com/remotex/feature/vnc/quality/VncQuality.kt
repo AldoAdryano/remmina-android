@@ -45,7 +45,7 @@ fun VncQualityMode.profileFor(): VncQualityProfile = when (this) {
         mode = VncQualityMode.HIGH,
         pixelFormat = RfbPixelFormat.remoteXDefault(),
         preferRaw = false,
-        tightJpegQuality = 9,
-        tightCompressionLevel = 3,
+        tightJpegQuality = 8,
+        tightCompressionLevel = 2,
     )
 }

@@ -47,6 +47,7 @@ class VncViewModel(
 
     init {
         viewModelScope.launch { engine.frames.collect { _frame.value = it } }
+        viewModelScope.launch { engine.qualityFallbacks.collect { mode -> _qualityMode.value = mode } }
         viewModelScope.launch {
             engine.state.collect { state ->
                 _sessionState.value = state
@@ -75,6 +76,10 @@ class VncViewModel(
     fun setQualityMode(mode: VncQualityMode) {
         _qualityMode.value = mode
         viewModelScope.launch { engine.setQualityMode(mode) }
+    }
+
+    fun setFrameUpdatesEnabled(enabled: Boolean) {
+        viewModelScope.launch { engine.setFrameUpdatesEnabled(enabled) }
     }
 
     fun disconnect() {

@@ -51,6 +51,8 @@ import com.remotex.feature.vnc.domain.VncSessionState
 import com.remotex.feature.vnc.engine.RfbVncEngine
 import com.remotex.feature.vnc.presentation.VncScreen
 import com.remotex.feature.vnc.presentation.VncViewModel
+import com.remotex.feature.watch.RemoteWatchController
+import com.remotex.feature.watch.RemoteWatchState
 import kotlinx.coroutines.launch
 
 @Composable
@@ -152,17 +154,24 @@ private fun VncRoute(profile: ConnectionProfile, container: AppContainer, onBack
     val audioVm = remember(profile.id) {
         RemoteAudioViewModel(SshPcmAudioEngine(context.applicationContext, container.newSshEngine()))
     }
+    val watchController = remember(profile.id) {
+        RemoteWatchController(context.applicationContext, container.newSshEngine())
+    }
     val state by vm.sessionState.collectAsState()
     val performanceStats by vm.performanceStats.collectAsState()
     val audioState by audioVm.state.collectAsState()
+    val watchState by watchController.state.collectAsState()
     var needsPrompt by remember(profile.id) { mutableStateOf(profile.credentialPolicy == CredentialPolicy.ALWAYS_ASK) }
     var attemptedSaved by remember(profile.id) { mutableStateOf(false) }
     var audioNeedsPrompt by remember(profile.id) { mutableStateOf(false) }
     var audioNotice by remember(profile.id) { mutableStateOf<String?>(null) }
+    var watchNeedsPrompt by remember(profile.id) { mutableStateOf(false) }
+    var watchNotice by remember(profile.id) { mutableStateOf<String?>(null) }
 
-    DisposableEffect(vm, audioVm) {
+    DisposableEffect(vm, audioVm, watchController) {
         onDispose {
             audioVm.stop()
+            watchController.releaseAsync()
             vm.disconnect()
         }
     }
@@ -191,6 +200,19 @@ private fun VncRoute(profile: ConnectionProfile, container: AppContainer, onBack
             is RemoteAudioState.Playing -> "Audio remote aktif • sync ${current.delayMs} ms"
             is RemoteAudioState.Failed -> current.reason
             RemoteAudioState.Idle -> audioNotice
+        }
+    }
+    LaunchedEffect(watchState) {
+        val mediaPlaneActive = watchState is RemoteWatchState.Connecting ||
+            watchState is RemoteWatchState.Buffering ||
+            watchState is RemoteWatchState.Playing
+        vm.setFrameUpdatesEnabled(!mediaPlaneActive)
+        watchNotice = when (val current = watchState) {
+            RemoteWatchState.Connecting -> "Menyiapkan Mode Menonton…"
+            RemoteWatchState.Buffering -> "Buffering video dan audio…"
+            is RemoteWatchState.Playing -> "Mode Menonton aktif • ${current.label} • A/V sinkron"
+            is RemoteWatchState.Failed -> current.reason
+            RemoteWatchState.Idle -> watchNotice
         }
     }
 
@@ -228,12 +250,48 @@ private fun VncRoute(profile: ConnectionProfile, container: AppContainer, onBack
         }
     }
 
+    fun startWatch(auth: SshAuth) {
+        watchNeedsPrompt = false
+        watchNotice = null
+        audioVm.stop()
+        watchController.startAsync(
+            SshConnectionSpec(profile.host, profile.sshPort, profile.username, auth),
+        )
+    }
+
+    fun requestWatch() {
+        when (watchState) {
+            RemoteWatchState.Connecting,
+            RemoteWatchState.Buffering,
+            is RemoteWatchState.Playing -> {
+                watchController.stopAsync()
+                watchNotice = "Mode Menonton dimatikan"
+            }
+            else -> {
+                if (!profile.sshEnabled) {
+                    watchNotice = "Aktifkan SSH pada profil untuk Mode Menonton"
+                    return
+                }
+                if (profile.credentialPolicy == CredentialPolicy.SAVE_SECURELY) {
+                    scope.launch {
+                        val auth = container.savedSshAuth(profile)
+                        if (auth == null) watchNeedsPrompt = true else startWatch(auth)
+                    }
+                } else {
+                    watchNeedsPrompt = true
+                }
+            }
+        }
+    }
+
     if (needsPrompt) {
         PasswordPrompt("Password VNC • ${profile.name}") { password ->
             needsPrompt = false
             vm.connect(profile.host, profile.vncPort, password)
         }
     } else {
+        val watchActive = watchState is RemoteWatchState.Playing
+        val watchConnecting = watchState is RemoteWatchState.Connecting || watchState is RemoteWatchState.Buffering
         Box(Modifier.fillMaxSize()) {
             VncScreen(
                 viewModel = vm,
@@ -244,6 +302,18 @@ private fun VncRoute(profile: ConnectionProfile, container: AppContainer, onBack
                 audioConnecting = audioState is RemoteAudioState.Connecting,
                 audioMessage = audioNotice,
                 onAudioToggle = ::requestAudio,
+                showWatchControl = true,
+                watchActive = watchActive,
+                watchConnecting = watchConnecting,
+                watchMessage = watchNotice,
+                onWatchToggle = ::requestWatch,
+                watchContent = if (watchActive || watchConnecting) {
+                    {
+                        WatchPlayerSurface(player = watchController.player)
+                    }
+                } else {
+                    null
+                },
             )
             if (audioNeedsPrompt) {
                 AlertDialog(
@@ -255,6 +325,19 @@ private fun VncRoute(profile: ConnectionProfile, container: AppContainer, onBack
                     title = { Text("Audio melalui SSH") },
                     text = {
                         SshAuthPrompt(profile.authenticationMode) { auth -> startAudio(auth) }
+                    },
+                )
+            }
+            if (watchNeedsPrompt) {
+                AlertDialog(
+                    onDismissRequest = { watchNeedsPrompt = false },
+                    confirmButton = {},
+                    dismissButton = {
+                        TextButton(onClick = { watchNeedsPrompt = false }) { Text("Batal") }
+                    },
+                    title = { Text("Mode Menonton melalui SSH") },
+                    text = {
+                        SshAuthPrompt(profile.authenticationMode) { auth -> startWatch(auth) }
                     },
                 )
             }

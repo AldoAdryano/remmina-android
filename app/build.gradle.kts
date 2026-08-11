@@ -83,6 +83,7 @@ dependencies {
     implementation(project(":feature:connections"))
     implementation(project(":feature:vnc"))
     implementation(project(":feature:audio"))
+    implementation(project(":feature:watch"))
     implementation(project(":feature:ssh"))
     implementation(project(":feature:sftp"))
     implementation(project(":feature:settings"))
@@ -100,6 +101,8 @@ dependencies {
     implementation(libs.compose.material3)
     implementation(libs.compose.icons.extended)
     implementation(libs.compose.ui.tooling.preview)
+    implementation(libs.media3.common)
+    implementation(libs.media3.ui)
 
     testImplementation(libs.junit)
     testImplementation(libs.kotlinx.coroutines.test)

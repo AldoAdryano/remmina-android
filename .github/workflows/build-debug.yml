@@ -116,6 +116,12 @@ jobs:
       - name: Check remote audio sync
         run: bash ./scripts/tests/check-remote-audio-sync.sh
 
+      - name: Check synchronized Watch Mode
+        run: bash ./scripts/tests/check-watch-mode.sh
+
+      - name: Check VNC High quality hardening
+        run: bash ./scripts/tests/check-vnc-high-hardening.sh
+
       - name: Unit tests, lint, and debug APK
         run: gradle --no-daemon testDebugUnitTest lintDebug assembleDebug --stacktrace
 

@@ -65,6 +65,8 @@ class RfbVncEngine(
 
     private val _performanceStats = MutableStateFlow(VncPerformanceStats())
     override val performanceStats: StateFlow<VncPerformanceStats> = _performanceStats.asStateFlow()
+    private val _qualityFallbacks = MutableSharedFlow<VncQualityMode>(extraBufferCapacity = 1)
+    override val qualityFallbacks: Flow<VncQualityMode> = _qualityFallbacks.asSharedFlow()
 
     private var socket: Socket? = null
     private var input: DataInputStream? = null
@@ -84,6 +86,7 @@ class RfbVncEngine(
     private val adaptiveQuality = AdaptiveQualityController()
     private var fpsWindowStartedNanos = System.nanoTime()
     private var changedFramesInWindow = 0
+    @Volatile private var frameUpdatesEnabled = true
 
     override suspend fun connect(spec: VncConnectionSpec) = coroutineScope {
         disconnectInternal(markClosed = false)
@@ -145,6 +148,17 @@ class RfbVncEngine(
             requestedEffectiveQuality = VncQualityMode.BALANCED
         } else {
             requestedEffectiveQuality = mode
+        }
+    }
+
+    override suspend fun setFrameUpdatesEnabled(enabled: Boolean) = withContext(ioDispatcher) {
+        val previous = frameUpdatesEnabled
+        frameUpdatesEnabled = enabled
+        if (enabled && !previous) {
+            val out = output ?: return@withContext
+            synchronized(writerLock) {
+                requestFramebufferUpdate(out, incremental = false)
+            }
         }
     }
 
@@ -328,6 +342,17 @@ class RfbVncEngine(
             }
         } catch (e: EOFException) {
             _state.value = VncSessionState.Failed("VNC connection closed by server", retryable = true)
+        } catch (oom: OutOfMemoryError) {
+            val fellBackFromHigh = downgradeHighAfterMemoryPressure()
+            runCatching { tightDecoder.close() }
+            _state.value = VncSessionState.Failed(
+                if (fellBackFromHigh) {
+                    "Kualitas Tinggi terlalu berat untuk frame ini. RemoteX beralih ke Seimbang saat menyambung ulang"
+                } else {
+                    "Memori tidak cukup untuk memproses frame VNC. RemoteX akan menyambung ulang"
+                },
+                retryable = true,
+            )
         } catch (t: Throwable) {
             if (t is CancellationException) throw t
             _state.value = VncSessionState.Failed(sanitizeError(t), retryable = t !is SecurityException)
@@ -416,7 +441,9 @@ class RfbVncEngine(
         // server-side capture/encoding and network transfer can overlap local delivery.
         synchronized(writerLock) {
             val qualityChanged = applyPendingQuality(output)
-            requestFramebufferUpdate(output, incremental = !qualityChanged)
+            if (frameUpdatesEnabled) {
+                requestFramebufferUpdate(output, incremental = !qualityChanged)
+            }
         }
 
         if (changed) {
@@ -567,6 +594,18 @@ class RfbVncEngine(
     }
 
     private fun currentDesktopName(): String = (state.value as? VncSessionState.Connected)?.desktopName.orEmpty()
+
+
+    private fun downgradeHighAfterMemoryPressure(): Boolean {
+        val highWasActive = selectedQuality == VncQualityMode.HIGH ||
+            requestedEffectiveQuality == VncQualityMode.HIGH ||
+            appliedQuality == VncQualityMode.HIGH
+        if (!highWasActive) return false
+        selectedQuality = VncQualityMode.BALANCED
+        requestedEffectiveQuality = VncQualityMode.BALANCED
+        _qualityFallbacks.tryEmit(VncQualityMode.BALANCED)
+        return true
+    }
 
     private fun sanitizeError(t: Throwable): String = when (t) {
         is SecurityException -> t.message ?: "VNC authentication failed"

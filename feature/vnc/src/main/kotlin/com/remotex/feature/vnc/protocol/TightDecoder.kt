@@ -17,6 +17,9 @@ class TightDecoder(
     private val pixelFormat: RfbPixelFormat,
 ) : AutoCloseable {
     private val inflaters = arrayOfNulls<Inflater>(4)
+    private var jpegBytes = ByteArray(0)
+    private var jpegPixels = IntArray(0)
+    private var jpegBitmap: Bitmap? = null
 
     fun decodeRectangle(
         input: DataInputStream,
@@ -328,29 +331,77 @@ class TightDecoder(
     ) {
         val length = TightCodec.readCompactLength(input, MAX_JPEG_BYTES)
         require(length > 0) { "Invalid Tight JPEG length" }
-        val jpeg = ByteArray(length)
-        input.readFully(jpeg)
+        val encoded = ensureJpegByteCapacity(length)
+        input.readFully(encoded, 0, length)
+
         val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-        BitmapFactory.decodeByteArray(jpeg, 0, jpeg.size, bounds)
+        BitmapFactory.decodeByteArray(encoded, 0, length, bounds)
         require(bounds.outWidth == width && bounds.outHeight == height) {
             "Tight JPEG dimensions ${bounds.outWidth}x${bounds.outHeight} do not match ${width}x$height"
         }
         require(bounds.outWidth.toLong() * bounds.outHeight <= MAX_RECT_PIXELS) { "Tight JPEG exceeds pixel safety limit" }
-        val options = BitmapFactory.Options().apply { inPreferredConfig = Bitmap.Config.ARGB_8888 }
-        val bitmap = BitmapFactory.decodeByteArray(jpeg, 0, jpeg.size, options)
-            ?: error("Invalid Tight JPEG payload")
-        try {
-            require(bitmap.width == width && bitmap.height == height) {
-                "Tight JPEG decode dimensions changed unexpectedly"
-            }
-            val pixels = IntArray(Math.multiplyExact(width, height))
-            bitmap.getPixels(pixels, 0, width, 0, 0, width, height)
-            repeat(height) { row ->
-                pixels.copyInto(framebuffer, (y + row) * framebufferWidth + x, row * width, (row + 1) * width)
-            }
-        } finally {
-            bitmap.recycle()
+
+        val previousBitmap = jpegBitmap
+        val reusable = previousBitmap?.takeIf {
+            !it.isRecycled && it.isMutable && it.width == width && it.height == height && it.config == Bitmap.Config.ARGB_8888
         }
+        val options = BitmapFactory.Options().apply {
+            inPreferredConfig = Bitmap.Config.ARGB_8888
+            inMutable = true
+            if (reusable != null) inBitmap = reusable
+        }
+        val decoded = try {
+            BitmapFactory.decodeByteArray(encoded, 0, length, options)
+        } catch (_: IllegalArgumentException) {
+            // Some vendor decoders reject inBitmap reuse even when dimensions match.
+            BitmapFactory.Options().apply {
+                inPreferredConfig = Bitmap.Config.ARGB_8888
+                inMutable = true
+            }.let { BitmapFactory.decodeByteArray(encoded, 0, length, it) }
+        } ?: error("Invalid Tight JPEG payload")
+
+        if (decoded !== previousBitmap) {
+            previousBitmap?.takeIf { !it.isRecycled }?.recycle()
+        }
+        jpegBitmap = decoded
+
+        require(decoded.width == width && decoded.height == height) {
+            "Tight JPEG decode dimensions changed unexpectedly"
+        }
+        val pixelCount = Math.multiplyExact(width, height)
+        val pixels = ensureJpegPixelCapacity(pixelCount)
+        decoded.getPixels(pixels, 0, width, 0, 0, width, height)
+        repeat(height) { row ->
+            pixels.copyInto(
+                destination = framebuffer,
+                destinationOffset = (y + row) * framebufferWidth + x,
+                startIndex = row * width,
+                endIndex = (row + 1) * width,
+            )
+        }
+    }
+
+    private fun ensureJpegByteCapacity(required: Int): ByteArray {
+        if (jpegBytes.size < required) {
+            jpegBytes = ByteArray(growCapacity(jpegBytes.size, required, MAX_JPEG_BYTES))
+        }
+        return jpegBytes
+    }
+
+    private fun ensureJpegPixelCapacity(required: Int): IntArray {
+        if (jpegPixels.size < required) {
+            jpegPixels = IntArray(growCapacity(jpegPixels.size, required, MAX_RECT_PIXELS.toInt()))
+        }
+        return jpegPixels
+    }
+
+    private fun growCapacity(current: Int, required: Int, maximum: Int): Int {
+        var next = current.coerceAtLeast(1)
+        while (next < required && next < maximum) {
+            next = (next * 2L).coerceAtMost(maximum.toLong()).toInt()
+        }
+        require(next >= required) { "Tight scratch buffer exceeds safety limit" }
+        return next
     }
 
     private fun fill(framebuffer: IntArray, framebufferWidth: Int, x: Int, y: Int, width: Int, height: Int, color: Int) {
@@ -367,6 +418,10 @@ class TightDecoder(
     override fun close() {
         inflaters.forEach { it?.end() }
         repeat(inflaters.size) { inflaters[it] = null }
+        jpegBitmap?.recycle()
+        jpegBitmap = null
+        jpegBytes = ByteArray(0)
+        jpegPixels = IntArray(0)
     }
 
     private sealed interface Filter {

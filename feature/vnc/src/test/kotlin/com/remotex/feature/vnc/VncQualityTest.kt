@@ -17,7 +17,7 @@ class VncQualityTest {
         assertFalse(VncQualityMode.HIGH.profileFor().preferRaw)
         assertEquals(7, VncQualityMode.BALANCED.profileFor().tightJpegQuality)
         assertEquals(4, VncQualityMode.PERFORMANCE.profileFor().tightJpegQuality)
-        assertEquals(9, VncQualityMode.HIGH.profileFor().tightJpegQuality)
+        assertEquals(8, VncQualityMode.HIGH.profileFor().tightJpegQuality)
         assertEquals(2, VncQualityMode.BALANCED.profileFor().tightCompressionLevel)
     }
 

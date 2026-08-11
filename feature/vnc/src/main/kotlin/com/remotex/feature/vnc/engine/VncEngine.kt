@@ -14,8 +14,10 @@ interface VncEngine {
     val frames: Flow<VncFrame>
     val remoteClipboard: Flow<String>
     val performanceStats: StateFlow<VncPerformanceStats>
+    val qualityFallbacks: Flow<VncQualityMode>
     suspend fun connect(spec: VncConnectionSpec)
     suspend fun send(event: VncInputEvent)
     suspend fun setQualityMode(mode: VncQualityMode)
+    suspend fun setFrameUpdatesEnabled(enabled: Boolean)
     suspend fun disconnect()
 }

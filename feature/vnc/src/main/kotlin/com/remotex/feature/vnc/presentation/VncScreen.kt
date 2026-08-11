@@ -83,6 +83,12 @@ fun VncScreen(
     audioConnecting: Boolean = false,
     audioMessage: String? = null,
     onAudioToggle: () -> Unit = {},
+    showWatchControl: Boolean = false,
+    watchActive: Boolean = false,
+    watchConnecting: Boolean = false,
+    watchMessage: String? = null,
+    onWatchToggle: () -> Unit = {},
+    watchContent: (@Composable () -> Unit)? = null,
 ) {
     val context = LocalContext.current
     val activity = context as? Activity
@@ -187,6 +193,10 @@ fun VncScreen(
         if (!audioMessage.isNullOrBlank()) statusMessage = audioMessage
     }
 
+    LaunchedEffect(watchMessage) {
+        if (!watchMessage.isNullOrBlank()) statusMessage = watchMessage
+    }
+
     LaunchedEffect(viewModel, context) {
         viewModel.remoteClipboard.collect { text ->
             if (text.isNotEmpty()) {
@@ -248,6 +258,19 @@ fun VncScreen(
                 frame?.let(view::setFrame)
             },
         )
+
+        if (watchActive || watchConnecting) {
+            Box(
+                Modifier
+                    .fillMaxSize()
+                    .background(Color.Black),
+            ) {
+                watchContent?.invoke()
+                if (watchConnecting) {
+                    CircularProgressIndicator(Modifier.align(Alignment.Center))
+                }
+            }
+        }
 
         when (val current = state) {
             VncSessionState.Idle,
@@ -365,7 +388,19 @@ fun VncScreen(
                             }
                         }
                     }
-                    if (showAudioControl) {
+                    if (showWatchControl) {
+                        ToolButton(
+                            when {
+                                watchConnecting -> "Menonton…"
+                                watchActive -> "Keluar Menonton"
+                                else -> "Menonton"
+                            },
+                        ) {
+                            keepControlsVisible()
+                            onWatchToggle()
+                        }
+                    }
+                    if (showAudioControl && !watchActive && !watchConnecting) {
                         ToolButton(
                             when {
                                 audioConnecting -> "Audio…"
@@ -437,14 +472,19 @@ fun VncScreen(
 
 
         if (connected) {
-            val fpsText = if (performanceStats.fps > 0) "${performanceStats.fps} FPS" else "-- FPS"
-            val modeText = if (qualityMode == VncQualityMode.AUTO) {
-                "Otomatis · ${performanceStats.activeQuality.label()}"
+            val indicator = if (watchActive || watchConnecting) {
+                if (watchActive) "Mode Menonton • 720p30" else "Menyiapkan Mode Menonton…"
             } else {
-                performanceStats.activeQuality.label()
+                val fpsText = if (performanceStats.fps > 0) "${performanceStats.fps} FPS" else "-- FPS"
+                val modeText = if (qualityMode == VncQualityMode.AUTO) {
+                    "Otomatis · ${performanceStats.activeQuality.label()}"
+                } else {
+                    performanceStats.activeQuality.label()
+                }
+                "$fpsText • $modeText"
             }
             PerformanceIndicator(
-                text = "$fpsText • $modeText",
+                text = indicator,
                 modifier = Modifier.align(Alignment.BottomStart).padding(12.dp),
             )
         }

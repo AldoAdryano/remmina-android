@@ -14,7 +14,7 @@ fun main() {
     check(!VncQualityMode.HIGH.profileFor().preferRaw)
     check(VncQualityMode.BALANCED.profileFor().tightJpegQuality == 7)
     check(VncQualityMode.PERFORMANCE.profileFor().tightJpegQuality == 4)
-    check(VncQualityMode.HIGH.profileFor().tightJpegQuality == 9)
+    check(VncQualityMode.HIGH.profileFor().tightJpegQuality == 8)
 
     val auto = AdaptiveQualityController()
     check(auto.effectiveMode == VncQualityMode.BALANCED)

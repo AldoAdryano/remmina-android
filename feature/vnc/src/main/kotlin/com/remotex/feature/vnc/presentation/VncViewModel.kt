@@ -9,6 +9,7 @@ import com.remotex.feature.vnc.domain.VncInputMode
 import com.remotex.feature.vnc.domain.VncScaleMode
 import com.remotex.feature.vnc.domain.VncSessionState
 import com.remotex.feature.vnc.engine.VncEngine
+import com.remotex.feature.vnc.quality.VncQualityMode
 import com.remotex.feature.vnc.session.ReconnectPolicy
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -24,6 +25,7 @@ class VncViewModel(
     private val _sessionState = MutableStateFlow<VncSessionState>(VncSessionState.Idle)
     val sessionState: StateFlow<VncSessionState> = _sessionState.asStateFlow()
     val remoteClipboard = engine.remoteClipboard
+    val performanceStats = engine.performanceStats
 
     private val _frame = MutableStateFlow<VncFrame?>(null)
     val frame: StateFlow<VncFrame?> = _frame.asStateFlow()
@@ -33,6 +35,9 @@ class VncViewModel(
 
     private val _scaleMode = MutableStateFlow(VncScaleMode.FIT_SCREEN)
     val scaleMode = _scaleMode.asStateFlow()
+
+    private val _qualityMode = MutableStateFlow(VncQualityMode.BALANCED)
+    val qualityMode = _qualityMode.asStateFlow()
 
     private var currentSpec: VncConnectionSpec? = null
     private var sessionPassword: CharArray? = null
@@ -67,6 +72,10 @@ class VncViewModel(
 
     fun setInputMode(mode: VncInputMode) { _inputMode.value = mode }
     fun setScaleMode(mode: VncScaleMode) { _scaleMode.value = mode }
+    fun setQualityMode(mode: VncQualityMode) {
+        _qualityMode.value = mode
+        viewModelScope.launch { engine.setQualityMode(mode) }
+    }
 
     fun disconnect() {
         explicitDisconnect = true

@@ -28,6 +28,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -64,6 +66,7 @@ import com.remotex.feature.vnc.domain.VncInputMode
 import com.remotex.feature.vnc.domain.VncScaleMode
 import com.remotex.feature.vnc.domain.VncSessionState
 import com.remotex.feature.vnc.input.KeySymMapper
+import com.remotex.feature.vnc.quality.VncQualityMode
 import com.remotex.feature.vnc.screenshot.VncScreenshotSaver
 import kotlinx.coroutines.delay
 
@@ -84,6 +87,8 @@ fun VncScreen(
     val frame by viewModel.frame.collectAsState()
     val inputMode by viewModel.inputMode.collectAsState()
     val scaleMode by viewModel.scaleMode.collectAsState()
+    val qualityMode by viewModel.qualityMode.collectAsState()
+    val performanceStats by viewModel.performanceStats.collectAsState()
     val focusRequester = remember { FocusRequester() }
     val keyboardController = LocalSoftwareKeyboardController.current
     var hiddenText by remember { mutableStateOf("") }
@@ -92,6 +97,7 @@ fun VncScreen(
     var fullscreen by remember { mutableStateOf(true) }
     var controlsVisible by remember { mutableStateOf(true) }
     var controlsEpoch by remember { mutableIntStateOf(0) }
+    var qualityMenuExpanded by remember { mutableStateOf(false) }
     var requestedOrientation by rememberSaveable {
         mutableStateOf(ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE)
     }
@@ -160,10 +166,10 @@ fun VncScreen(
         if (connected) keepControlsVisible()
     }
 
-    LaunchedEffect(controlsVisible, controlsEpoch, connected) {
-        if (controlsVisible && connected) {
+    LaunchedEffect(controlsVisible, controlsEpoch, connected, qualityMenuExpanded) {
+        if (controlsVisible && connected && !qualityMenuExpanded) {
             delay(3_500)
-            controlsVisible = false
+            if (!qualityMenuExpanded) controlsVisible = false
         }
     }
 
@@ -327,6 +333,32 @@ fun VncScreen(
                         keepControlsVisible()
                         cycleScaleMode()
                     }
+                    Box {
+                        ToolButton("Kualitas: ${qualityMode.label()}") {
+                            keepControlsVisible()
+                            qualityMenuExpanded = true
+                        }
+                        DropdownMenu(
+                            expanded = qualityMenuExpanded,
+                            onDismissRequest = { qualityMenuExpanded = false },
+                        ) {
+                            VncQualityMode.entries.forEach { mode ->
+                                DropdownMenuItem(
+                                    text = {
+                                        Text(
+                                            if (mode == qualityMode) "✓ ${mode.label()}" else mode.label(),
+                                        )
+                                    },
+                                    onClick = {
+                                        viewModel.setQualityMode(mode)
+                                        qualityMenuExpanded = false
+                                        keepControlsVisible()
+                                        statusMessage = "Kualitas: ${mode.label()}"
+                                    },
+                                )
+                            }
+                        }
+                    }
                     if (showAudioControl) {
                         ToolButton(
                             when {
@@ -396,6 +428,20 @@ fun VncScreen(
             modifier = Modifier.align(Alignment.TopEnd).padding(8.dp),
         )
 
+
+        if (connected) {
+            val fpsText = if (performanceStats.fps > 0) "${performanceStats.fps} FPS" else "-- FPS"
+            val modeText = if (qualityMode == VncQualityMode.AUTO) {
+                "Otomatis · ${performanceStats.activeQuality.label()}"
+            } else {
+                performanceStats.activeQuality.label()
+            }
+            PerformanceIndicator(
+                text = "$fpsText • $modeText",
+                modifier = Modifier.align(Alignment.BottomStart).padding(12.dp),
+            )
+        }
+
         statusMessage?.let {
             StatusSurface(
                 text = it,
@@ -455,6 +501,30 @@ private fun StatusSurface(text: String, modifier: Modifier = Modifier) {
             style = MaterialTheme.typography.bodyMedium,
         )
     }
+}
+
+
+@Composable
+private fun PerformanceIndicator(text: String, modifier: Modifier = Modifier) {
+    Surface(
+        modifier = modifier,
+        shape = RoundedCornerShape(50),
+        color = Color.Black.copy(alpha = 0.48f),
+    ) {
+        Text(
+            text = text,
+            color = Color.White.copy(alpha = 0.92f),
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
+            style = MaterialTheme.typography.labelSmall,
+        )
+    }
+}
+
+private fun VncQualityMode.label(): String = when (this) {
+    VncQualityMode.AUTO -> "Otomatis"
+    VncQualityMode.PERFORMANCE -> "Performa"
+    VncQualityMode.BALANCED -> "Seimbang"
+    VncQualityMode.HIGH -> "Tinggi"
 }
 
 @Composable

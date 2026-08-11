@@ -102,6 +102,11 @@ jobs:
       - name: Check VNC performance and audio latency
         run: bash ./scripts/tests/check-vnc-performance.sh
 
+      - name: Check VNC adaptive display quality
+        run: |
+          bash ./scripts/tests/check-vnc-quality-pure.sh
+          bash ./scripts/tests/check-vnc-quality-source.sh
+
       - name: Unit tests, lint, and debug APK
         run: gradle --no-daemon testDebugUnitTest lintDebug assembleDebug --stacktrace
 

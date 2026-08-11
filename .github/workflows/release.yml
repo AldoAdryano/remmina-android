@@ -102,6 +102,14 @@ jobs:
       - name: Check remote audio source
         run: bash ./scripts/tests/check-remote-audio-source.sh
 
+      - name: Check VNC performance and audio latency
+        run: bash ./scripts/tests/check-vnc-performance.sh
+
+      - name: Check VNC adaptive display quality
+        run: |
+          bash ./scripts/tests/check-vnc-quality-pure.sh
+          bash ./scripts/tests/check-vnc-quality-source.sh
+
       - name: Resolve Android version name
         shell: bash
         run: echo "REMOTEX_VERSION_NAME=${RELEASE_TAG#v}" >> "$GITHUB_ENV"

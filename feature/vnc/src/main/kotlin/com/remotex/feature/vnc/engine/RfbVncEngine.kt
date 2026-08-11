@@ -15,6 +15,10 @@ import com.remotex.feature.vnc.protocol.readU32
 import com.remotex.feature.vnc.protocol.readU8
 import com.remotex.feature.vnc.protocol.writeU16
 import com.remotex.feature.vnc.protocol.writeU32
+import com.remotex.feature.vnc.quality.AdaptiveQualityController
+import com.remotex.feature.vnc.quality.VncPerformanceStats
+import com.remotex.feature.vnc.quality.VncQualityMode
+import com.remotex.feature.vnc.quality.profileFor
 import java.io.BufferedInputStream
 import java.io.BufferedOutputStream
 import java.io.DataInputStream
@@ -58,6 +62,9 @@ class RfbVncEngine(
     private val _remoteClipboard = MutableSharedFlow<String>(extraBufferCapacity = 2)
     override val remoteClipboard: Flow<String> = _remoteClipboard.asSharedFlow()
 
+    private val _performanceStats = MutableStateFlow(VncPerformanceStats())
+    override val performanceStats: StateFlow<VncPerformanceStats> = _performanceStats.asStateFlow()
+
     private var socket: Socket? = null
     private var input: DataInputStream? = null
     private var output: DataOutputStream? = null
@@ -67,11 +74,21 @@ class RfbVncEngine(
     @Volatile private var framebufferWidth: Int = 0
     @Volatile private var framebufferHeight: Int = 0
     private var framebuffer = IntArray(0)
-    private val pixelFormat = RfbPixelFormat.remoteXPerformance()
-    private val hextileDecoder = HextileDecoder(pixelFormat)
+    @Volatile private var selectedQuality = VncQualityMode.BALANCED
+    @Volatile private var requestedEffectiveQuality = VncQualityMode.BALANCED
+    private var appliedQuality = VncQualityMode.BALANCED
+    private var pixelFormat = RfbPixelFormat.remoteXDefault()
+    private var hextileDecoder = HextileDecoder(pixelFormat)
+    private val adaptiveQuality = AdaptiveQualityController()
+    private var fpsWindowStartedNanos = System.nanoTime()
+    private var changedFramesInWindow = 0
 
     override suspend fun connect(spec: VncConnectionSpec) = coroutineScope {
         disconnectInternal(markClosed = false)
+        if (selectedQuality == VncQualityMode.AUTO) {
+            adaptiveQuality.reset()
+            requestedEffectiveQuality = VncQualityMode.BALANCED
+        }
         _state.value = VncSessionState.Connecting
 
         try {
@@ -116,6 +133,16 @@ class RfbVncEngine(
                     out.flush()
                 }
             }
+        }
+    }
+
+    override suspend fun setQualityMode(mode: VncQualityMode) {
+        selectedQuality = mode
+        if (mode == VncQualityMode.AUTO) {
+            adaptiveQuality.reset()
+            requestedEffectiveQuality = VncQualityMode.BALANCED
+        } else {
+            requestedEffectiveQuality = mode
         }
     }
 
@@ -183,8 +210,10 @@ class RfbVncEngine(
         val desktopName = input.readLengthPrefixedText(maxBytes = 4 * 1024 * 1024)
         setFramebufferSize(width, height)
 
+        resetPerformanceWindow()
+        applyProfileLocally(requestedEffectiveQuality)
         sendSetPixelFormat(output, pixelFormat)
-        sendSetEncodings(output)
+        sendSetEncodings(output, requestedEffectiveQuality.profileFor().preferRaw)
         requestFramebufferUpdate(output, incremental = false)
         _state.value = VncSessionState.Connected(width, height, desktopName)
     }
@@ -253,8 +282,12 @@ class RfbVncEngine(
         output.flush()
     }
 
-    private fun sendSetEncodings(output: DataOutputStream) {
-        val encodings = intArrayOf(ENCODING_HEXTILE, ENCODING_COPY_RECT, ENCODING_RAW, ENCODING_DESKTOP_SIZE, ENCODING_LAST_RECT)
+    private fun sendSetEncodings(output: DataOutputStream, preferRaw: Boolean) {
+        val encodings = if (preferRaw) {
+            intArrayOf(ENCODING_RAW, ENCODING_COPY_RECT, ENCODING_HEXTILE, ENCODING_DESKTOP_SIZE, ENCODING_LAST_RECT)
+        } else {
+            intArrayOf(ENCODING_HEXTILE, ENCODING_COPY_RECT, ENCODING_RAW, ENCODING_DESKTOP_SIZE, ENCODING_LAST_RECT)
+        }
         output.writeByte(2)
         output.writeByte(0)
         output.writeU16(encodings.size)
@@ -351,7 +384,9 @@ class RfbVncEngine(
             }
         }
 
-        if (dirtyRight > dirtyLeft && dirtyBottom > dirtyTop) {
+        val changed = dirtyRight > dirtyLeft && dirtyBottom > dirtyTop
+        if (changed) {
+            changedFramesInWindow += 1
             _frames.emit(
                 VncFrame(
                     width = framebufferWidth,
@@ -364,9 +399,56 @@ class RfbVncEngine(
                 ),
             )
         }
-        synchronized(writerLock) { requestFramebufferUpdate(output, incremental = true) }
+        updatePerformanceWindow()
+        synchronized(writerLock) {
+            val qualityChanged = applyPendingQuality(output)
+            requestFramebufferUpdate(output, incremental = !qualityChanged)
+        }
     }
 
+
+    private fun updatePerformanceWindow(nowNanos: Long = System.nanoTime()) {
+        val elapsedNanos = nowNanos - fpsWindowStartedNanos
+        if (elapsedNanos < FPS_WINDOW_NANOS) return
+        val fps = ((changedFramesInWindow * 1_000_000_000L) / elapsedNanos.coerceAtLeast(1L)).toInt()
+        if (selectedQuality == VncQualityMode.AUTO) {
+            requestedEffectiveQuality = adaptiveQuality.observeWindow(fps, changedFramesInWindow)
+        }
+        _performanceStats.value = VncPerformanceStats(
+            fps = fps,
+            activeQuality = appliedQuality,
+        )
+        fpsWindowStartedNanos = nowNanos
+        changedFramesInWindow = 0
+    }
+
+    private fun resetPerformanceWindow() {
+        fpsWindowStartedNanos = System.nanoTime()
+        changedFramesInWindow = 0
+        _performanceStats.value = VncPerformanceStats(
+            fps = 0,
+            activeQuality = appliedQuality,
+        )
+    }
+
+    private fun applyPendingQuality(output: DataOutputStream): Boolean {
+        val desired = requestedEffectiveQuality
+        if (desired == appliedQuality) return false
+        applyProfileLocally(desired)
+        sendSetPixelFormat(output, pixelFormat)
+        sendSetEncodings(output, desired.profileFor().preferRaw)
+        _performanceStats.value = _performanceStats.value.copy(activeQuality = appliedQuality)
+        return true
+    }
+
+    private fun applyProfileLocally(mode: VncQualityMode) {
+        val effective = if (mode == VncQualityMode.AUTO) VncQualityMode.BALANCED else mode
+        val profile = effective.profileFor()
+        pixelFormat = profile.pixelFormat
+        hextileDecoder = HextileDecoder(pixelFormat)
+        appliedQuality = effective
+        _performanceStats.value = _performanceStats.value.copy(activeQuality = effective)
+    }
 
     private fun readRawRectangle(input: DataInputStream, x: Int, y: Int, width: Int, height: Int) {
         require(x >= 0 && y >= 0 && x + width <= framebufferWidth && y + height <= framebufferHeight) {
@@ -458,5 +540,6 @@ class RfbVncEngine(
         private const val ENCODING_DESKTOP_SIZE = -223
         private const val ENCODING_LAST_RECT = -224
         private const val MAX_CLIPBOARD_BYTES = 1024L * 1024L
+        private const val FPS_WINDOW_NANOS = 1_000_000_000L
     }
 }

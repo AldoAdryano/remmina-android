@@ -16,17 +16,26 @@ data class RfbPixelFormat(
 
     fun decodePixel(bytes: ByteArray, offset: Int): Int {
         require(trueColor) { "RemoteX V1 only renders true-color RFB pixel formats" }
-        require(bitsPerPixel == 32) { "RemoteX V1 requests 32-bit RFB pixels" }
-        val raw = if (bigEndian) {
-            ((bytes[offset].toInt() and 0xff) shl 24) or
-                ((bytes[offset + 1].toInt() and 0xff) shl 16) or
-                ((bytes[offset + 2].toInt() and 0xff) shl 8) or
-                (bytes[offset + 3].toInt() and 0xff)
-        } else {
-            (bytes[offset].toInt() and 0xff) or
-                ((bytes[offset + 1].toInt() and 0xff) shl 8) or
-                ((bytes[offset + 2].toInt() and 0xff) shl 16) or
-                ((bytes[offset + 3].toInt() and 0xff) shl 24)
+        require(bitsPerPixel == 16 || bitsPerPixel == 32) { "RemoteX supports 16-bit and 32-bit RFB pixels" }
+        val raw = when (bitsPerPixel) {
+            16 -> if (bigEndian) {
+                ((bytes[offset].toInt() and 0xff) shl 8) or
+                    (bytes[offset + 1].toInt() and 0xff)
+            } else {
+                (bytes[offset].toInt() and 0xff) or
+                    ((bytes[offset + 1].toInt() and 0xff) shl 8)
+            }
+            else -> if (bigEndian) {
+                ((bytes[offset].toInt() and 0xff) shl 24) or
+                    ((bytes[offset + 1].toInt() and 0xff) shl 16) or
+                    ((bytes[offset + 2].toInt() and 0xff) shl 8) or
+                    (bytes[offset + 3].toInt() and 0xff)
+            } else {
+                (bytes[offset].toInt() and 0xff) or
+                    ((bytes[offset + 1].toInt() and 0xff) shl 8) or
+                    ((bytes[offset + 2].toInt() and 0xff) shl 16) or
+                    ((bytes[offset + 3].toInt() and 0xff) shl 24)
+            }
         }
         val red = scale((raw ushr redShift) and redMax, redMax)
         val green = scale((raw ushr greenShift) and greenMax, greenMax)
@@ -37,6 +46,19 @@ data class RfbPixelFormat(
     private fun scale(value: Int, max: Int): Int = if (max == 255) value else (value * 255) / max.coerceAtLeast(1)
 
     companion object {
+        fun remoteXPerformance() = RfbPixelFormat(
+            bitsPerPixel = 16,
+            depth = 16,
+            bigEndian = false,
+            trueColor = true,
+            redMax = 31,
+            greenMax = 63,
+            blueMax = 31,
+            redShift = 11,
+            greenShift = 5,
+            blueShift = 0,
+        )
+
         fun remoteXDefault() = RfbPixelFormat(
             bitsPerPixel = 32,
             depth = 24,

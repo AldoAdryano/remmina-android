@@ -99,6 +99,9 @@ jobs:
       - name: Check remote audio source
         run: bash ./scripts/tests/check-remote-audio-source.sh
 
+      - name: Check VNC performance and audio latency
+        run: bash ./scripts/tests/check-vnc-performance.sh
+
       - name: Unit tests, lint, and debug APK
         run: gradle --no-daemon testDebugUnitTest lintDebug assembleDebug --stacktrace
 

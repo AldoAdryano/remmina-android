@@ -80,9 +80,32 @@ class VncSurfaceView(context: Context) : View(context) {
         remoteHeight = frame.height
         pointerX = pointerX.coerceIn(0, remoteWidth - 1)
         pointerY = pointerY.coerceIn(0, remoteHeight - 1)
-        bitmap?.recycle()
-        bitmap = Bitmap.createBitmap(frame.argb, frame.width, frame.height, Bitmap.Config.ARGB_8888)
-        invalidate()
+
+        val current = bitmap
+        val target = if (current == null || current.width != frame.width || current.height != frame.height) {
+            current?.recycle()
+            Bitmap.createBitmap(frame.width, frame.height, Bitmap.Config.ARGB_8888).also {
+                it.eraseColor(Color.BLACK)
+                bitmap = it
+            }
+        } else {
+            current
+        }
+
+        val dirtyWidth = frame.dirtyRight - frame.dirtyLeft
+        val dirtyHeight = frame.dirtyBottom - frame.dirtyTop
+        if (dirtyWidth > 0 && dirtyHeight > 0) {
+            target.setPixels(
+                frame.argb,
+                frame.dirtyTop * frame.width + frame.dirtyLeft,
+                frame.width,
+                frame.dirtyLeft,
+                frame.dirtyTop,
+                dirtyWidth,
+                dirtyHeight,
+            )
+        }
+        postInvalidateOnAnimation()
     }
 
     override fun onDraw(canvas: Canvas) {

@@ -32,7 +32,7 @@ internal class AndroidPcmPlayer(context: Context) : PcmPlayer {
             AudioFormat.ENCODING_PCM_16BIT,
         )
         require(minBuffer > 0) { "Perangkat Android tidak mendukung format audio remote" }
-        val targetBuffer = RemoteAudioCommand.RATE_HZ * RemoteAudioCommand.CHANNELS * BYTES_PER_SAMPLE / 5
+        val targetBuffer = RemoteAudioCommand.RATE_HZ * RemoteAudioCommand.CHANNELS * BYTES_PER_SAMPLE * TARGET_BUFFER_MS / 1_000
         val bufferSize = maxOf(minBuffer, targetBuffer)
 
         focusGranted = audioManager.requestAudioFocus(focusRequest) == AudioManager.AUDIOFOCUS_REQUEST_GRANTED
@@ -49,6 +49,7 @@ internal class AndroidPcmPlayer(context: Context) : PcmPlayer {
             )
             .setBufferSizeInBytes(bufferSize)
             .setTransferMode(AudioTrack.MODE_STREAM)
+            .setPerformanceMode(AudioTrack.PERFORMANCE_MODE_LOW_LATENCY)
             .build()
         require(created.state == AudioTrack.STATE_INITIALIZED) {
             created.release()
@@ -87,5 +88,6 @@ internal class AndroidPcmPlayer(context: Context) : PcmPlayer {
 
     private companion object {
         const val BYTES_PER_SAMPLE = 2
+        const val TARGET_BUFFER_MS = 60
     }
 }

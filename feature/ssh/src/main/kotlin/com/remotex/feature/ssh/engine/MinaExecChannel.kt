@@ -34,6 +34,6 @@ internal class MinaExecChannel(
     }
 
     private companion object {
-        const val BUFFER_SIZE = 16 * 1024
+        const val BUFFER_SIZE = 4 * 1024
     }
 }

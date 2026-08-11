@@ -5,6 +5,7 @@ import com.remotex.feature.vnc.domain.VncFrame
 import com.remotex.feature.vnc.domain.VncInputEvent
 import com.remotex.feature.vnc.domain.VncSessionState
 import com.remotex.feature.vnc.input.TrackpadGestureInterpreter
+import com.remotex.feature.vnc.protocol.HextileDecoder
 import com.remotex.feature.vnc.protocol.RfbAuth
 import com.remotex.feature.vnc.protocol.RfbPixelFormat
 import com.remotex.feature.vnc.protocol.readLengthPrefixedText
@@ -66,7 +67,8 @@ class RfbVncEngine(
     @Volatile private var framebufferWidth: Int = 0
     @Volatile private var framebufferHeight: Int = 0
     private var framebuffer = IntArray(0)
-    private val pixelFormat = RfbPixelFormat.remoteXDefault()
+    private val pixelFormat = RfbPixelFormat.remoteXPerformance()
+    private val hextileDecoder = HextileDecoder(pixelFormat)
 
     override suspend fun connect(spec: VncConnectionSpec) = coroutineScope {
         disconnectInternal(markClosed = false)
@@ -252,7 +254,7 @@ class RfbVncEngine(
     }
 
     private fun sendSetEncodings(output: DataOutputStream) {
-        val encodings = intArrayOf(ENCODING_RAW, ENCODING_COPY_RECT, ENCODING_DESKTOP_SIZE, ENCODING_LAST_RECT)
+        val encodings = intArrayOf(ENCODING_HEXTILE, ENCODING_COPY_RECT, ENCODING_RAW, ENCODING_DESKTOP_SIZE, ENCODING_LAST_RECT)
         output.writeByte(2)
         output.writeByte(0)
         output.writeU16(encodings.size)
@@ -314,6 +316,22 @@ class RfbVncEngine(
                     dirtyRight = maxOf(dirtyRight, x + width)
                     dirtyBottom = maxOf(dirtyBottom, y + height)
                 }
+                ENCODING_HEXTILE -> {
+                    hextileDecoder.decodeRectangle(
+                        input = input,
+                        framebuffer = framebuffer,
+                        framebufferWidth = framebufferWidth,
+                        framebufferHeight = framebufferHeight,
+                        x = x,
+                        y = y,
+                        width = width,
+                        height = height,
+                    )
+                    dirtyLeft = minOf(dirtyLeft, x)
+                    dirtyTop = minOf(dirtyTop, y)
+                    dirtyRight = maxOf(dirtyRight, x + width)
+                    dirtyBottom = maxOf(dirtyBottom, y + height)
+                }
                 ENCODING_COPY_RECT -> {
                     val srcX = input.readU16()
                     val srcY = input.readU16()
@@ -336,18 +354,19 @@ class RfbVncEngine(
         if (dirtyRight > dirtyLeft && dirtyBottom > dirtyTop) {
             _frames.emit(
                 VncFrame(
-                    framebufferWidth,
-                    framebufferHeight,
-                    framebuffer.copyOf(),
-                    dirtyLeft,
-                    dirtyTop,
-                    dirtyRight,
-                    dirtyBottom,
-                )
+                    width = framebufferWidth,
+                    height = framebufferHeight,
+                    argb = framebuffer.copyOf(),
+                    dirtyLeft = dirtyLeft,
+                    dirtyTop = dirtyTop,
+                    dirtyRight = dirtyRight,
+                    dirtyBottom = dirtyBottom,
+                ),
             )
         }
         synchronized(writerLock) { requestFramebufferUpdate(output, incremental = true) }
     }
+
 
     private fun readRawRectangle(input: DataInputStream, x: Int, y: Int, width: Int, height: Int) {
         require(x >= 0 && y >= 0 && x + width <= framebufferWidth && y + height <= framebufferHeight) {
@@ -435,6 +454,7 @@ class RfbVncEngine(
         private const val SECURITY_VNC = 2
         private const val ENCODING_RAW = 0
         private const val ENCODING_COPY_RECT = 1
+        private const val ENCODING_HEXTILE = 5
         private const val ENCODING_DESKTOP_SIZE = -223
         private const val ENCODING_LAST_RECT = -224
         private const val MAX_CLIPBOARD_BYTES = 1024L * 1024L

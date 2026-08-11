@@ -11,6 +11,7 @@ DATASOURCE=feature/watch/src/main/kotlin/com/remotex/feature/watch/SshPipeDataSo
 VNC_SCREEN=feature/vnc/src/main/kotlin/com/remotex/feature/vnc/presentation/VncScreen.kt
 VNC_ENGINE=feature/vnc/src/main/kotlin/com/remotex/feature/vnc/engine/RfbVncEngine.kt
 MANIFEST=app/src/main/AndroidManifest.xml
+UNIT_TEST=feature/watch/src/test/kotlin/com/remotex/feature/watch/RemoteWatchUnitTest.kt
 
 grep -q '":feature:watch"' "$SETTINGS"
 grep -q 'media3 = "1.10.1"' "$VERSIONS"
@@ -42,6 +43,8 @@ grep -q 'ProgressiveMediaSource.Factory' "$CONTROLLER"
 grep -q 'class SshPipeDataSource' "$DATASOURCE"
 grep -q 'PlayerView' "$SURFACE"
 ! grep -q 'RECORD_AUDIO' "$MANIFEST"
+grep -q 'class RemoteWatchUnitTest' "$UNIT_TEST"
+grep -q '@Test' "$UNIT_TEST"
 
 if command -v kotlinc >/dev/null 2>&1 && command -v java >/dev/null 2>&1; then
   TMP="$(mktemp -d)"

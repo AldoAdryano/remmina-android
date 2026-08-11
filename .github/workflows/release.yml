@@ -93,6 +93,12 @@ jobs:
       - name: Check stable debug signing source
         run: bash ./scripts/tests/check-stable-debug-signing.sh
 
+      - name: Check VNC polish source
+        run: bash ./scripts/tests/check-vnc-polish-source.sh
+
+      - name: Check VNC input stability
+        run: bash ./scripts/tests/check-vnc-input-stability.sh
+
       - name: Resolve Android version name
         shell: bash
         run: echo "REMOTEX_VERSION_NAME=${RELEASE_TAG#v}" >> "$GITHUB_ENV"

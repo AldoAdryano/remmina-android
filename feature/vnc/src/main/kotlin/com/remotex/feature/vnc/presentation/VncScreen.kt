@@ -43,6 +43,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -86,6 +87,9 @@ fun VncScreen(
     var fullscreen by remember { mutableStateOf(true) }
     var controlsVisible by remember { mutableStateOf(true) }
     var controlsEpoch by remember { mutableIntStateOf(0) }
+    var requestedOrientation by rememberSaveable {
+        mutableStateOf(ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE)
+    }
 
     fun keepControlsVisible() {
         controlsVisible = true
@@ -102,12 +106,16 @@ fun VncScreen(
     }
 
     DisposableEffect(activity) {
-        activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
         activity?.window?.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         onDispose {
             activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
             activity?.window?.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         }
+    }
+
+    DisposableEffect(activity, requestedOrientation) {
+        activity?.requestedOrientation = requestedOrientation
+        onDispose { }
     }
 
     DisposableEffect(activity, fullscreen) {
@@ -313,6 +321,21 @@ fun VncScreen(
                     ToolButton(if (fullscreen) "Jendela" else "Fullscreen") {
                         keepControlsVisible()
                         fullscreen = !fullscreen
+                    }
+                    ToolButton("Putar") {
+                        keepControlsVisible()
+                        requestedOrientation =
+                            if (requestedOrientation == ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE) {
+                                ActivityInfo.SCREEN_ORIENTATION_SENSOR_PORTRAIT
+                            } else {
+                                ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+                            }
+                        statusMessage =
+                            if (requestedOrientation == ActivityInfo.SCREEN_ORIENTATION_SENSOR_PORTRAIT) {
+                                "Orientasi potret"
+                            } else {
+                                "Orientasi lanskap"
+                            }
                     }
                     ToolButton("Keyboard") {
                         keepControlsVisible()

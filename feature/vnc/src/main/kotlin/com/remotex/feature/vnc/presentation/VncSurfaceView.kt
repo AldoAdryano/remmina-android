@@ -16,6 +16,7 @@ import com.remotex.feature.vnc.domain.VncInputEvent
 import com.remotex.feature.vnc.domain.VncInputMode
 import com.remotex.feature.vnc.domain.VncScaleMode
 import com.remotex.feature.vnc.input.TrackpadGestureInterpreter
+import com.remotex.feature.vnc.input.TrackpadTouchGuard
 import kotlin.math.hypot
 
 class VncSurfaceView(context: Context) : View(context) {
@@ -40,10 +41,9 @@ class VncSurfaceView(context: Context) : View(context) {
     private var gestureMoved = false
     private var dragging = false
     private var twoFingerStart = 0L
-    private var scrollAccumulatorX = 0f
-    private var scrollAccumulatorY = 0f
     private val scaledTouchSlop = ViewConfiguration.get(context).scaledTouchSlop.toFloat()
     private val trackpad = TrackpadGestureInterpreter()
+    private val touchGuard = TrackpadTouchGuard()
     private val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply { isFilterBitmap = true }
 
     private val scaleDetector = ScaleGestureDetector(context, object : ScaleGestureDetector.SimpleOnScaleGestureListener() {
@@ -101,6 +101,9 @@ class VncSurfaceView(context: Context) : View(context) {
                 maxPointers = 1
                 gestureMoved = false
                 dragging = false
+                touchGuard.beginGesture()
+                touchGuard.observePointerCount(1)
+                trackpad.resetGesture()
                 lastX = event.x
                 lastY = event.y
                 gestureOriginX = event.x
@@ -108,7 +111,11 @@ class VncSurfaceView(context: Context) : View(context) {
             }
 
             MotionEvent.ACTION_POINTER_DOWN -> {
-                if (event.pointerCount == 2) twoFingerStart = System.currentTimeMillis()
+                touchGuard.observePointerCount(event.pointerCount)
+                if (event.pointerCount == 2) {
+                    twoFingerStart = System.currentTimeMillis()
+                    trackpad.resetGesture()
+                }
                 lastX = averageX(event)
                 lastY = averageY(event)
                 gestureOriginX = lastX
@@ -116,15 +123,18 @@ class VncSurfaceView(context: Context) : View(context) {
             }
 
             MotionEvent.ACTION_MOVE -> {
+                touchGuard.observePointerCount(event.pointerCount)
                 val x = if (event.pointerCount > 1) averageX(event) else event.x
                 val y = if (event.pointerCount > 1) averageY(event) else event.y
                 val dx = x - lastX
                 val dy = y - lastY
-                if (hypot(x - gestureOriginX, y - gestureOriginY) > scaledTouchSlop) gestureMoved = true
+                if (event.pointerCount > 1 || touchGuard.canMovePointer(event.pointerCount)) {
+                    if (hypot(x - gestureOriginX, y - gestureOriginY) > scaledTouchSlop) gestureMoved = true
+                }
 
                 if (!scaleDetector.isInProgress) {
                     when {
-                        inputMode == VncInputMode.DIRECT_TOUCH && event.pointerCount == 1 -> {
+                        inputMode == VncInputMode.DIRECT_TOUCH && touchGuard.canMovePointer(event.pointerCount) -> {
                             mapDirect(event.x, event.y)?.let { (rx, ry) ->
                                 pointerX = rx
                                 pointerY = ry
@@ -132,7 +142,7 @@ class VncSurfaceView(context: Context) : View(context) {
                             }
                         }
 
-                        event.pointerCount == 1 -> {
+                        inputMode == VncInputMode.TRACKPAD && touchGuard.canMovePointer(event.pointerCount) -> {
                             val moved = trackpad.move(
                                 fingers = 1,
                                 dx = dx,
@@ -149,20 +159,34 @@ class VncSurfaceView(context: Context) : View(context) {
                         }
 
                         event.pointerCount == 2 -> {
-                            scrollAccumulatorX += dx
-                            scrollAccumulatorY += dy
-                            val sx = (scrollAccumulatorX / SCROLL_STEP_PX).toInt()
-                            val sy = (scrollAccumulatorY / SCROLL_STEP_PX).toInt()
-                            if (sx != 0 || sy != 0) {
-                                onInput(VncInputEvent.Scroll(sx, sy, pointerX, pointerY))
-                                scrollAccumulatorX -= sx * SCROLL_STEP_PX
-                                scrollAccumulatorY -= sy * SCROLL_STEP_PX
+                            val scroll = trackpad.scroll(dx, dy, SCROLL_STEP_PX)
+                            if (scroll.horizontalSteps != 0 || scroll.verticalSteps != 0) {
+                                onInput(
+                                    VncInputEvent.Scroll(
+                                        scroll.horizontalSteps,
+                                        scroll.verticalSteps,
+                                        pointerX,
+                                        pointerY,
+                                    ),
+                                )
                             }
                         }
                     }
                 }
                 lastX = x
                 lastY = y
+            }
+
+            MotionEvent.ACTION_POINTER_UP -> {
+                touchGuard.observePointerCount(event.pointerCount)
+                if (event.pointerCount > 1) {
+                    val remainingX = averageXExcluding(event, event.actionIndex)
+                    val remainingY = averageYExcluding(event, event.actionIndex)
+                    lastX = remainingX
+                    lastY = remainingY
+                    gestureOriginX = remainingX
+                    gestureOriginY = remainingY
+                }
             }
 
             MotionEvent.ACTION_UP -> {
@@ -177,16 +201,16 @@ class VncSurfaceView(context: Context) : View(context) {
                     }
                 }
                 maxPointers = 0
-                scrollAccumulatorX = 0f
-                scrollAccumulatorY = 0f
+                touchGuard.endGesture()
+                trackpad.resetGesture()
             }
 
             MotionEvent.ACTION_CANCEL -> {
                 if (dragging) onInput(VncInputEvent.Pointer(pointerX, pointerY, 0))
                 dragging = false
                 maxPointers = 0
-                scrollAccumulatorX = 0f
-                scrollAccumulatorY = 0f
+                touchGuard.endGesture()
+                trackpad.resetGesture()
             }
         }
         return true
@@ -237,6 +261,16 @@ class VncSurfaceView(context: Context) : View(context) {
 
     private fun averageY(event: MotionEvent): Float =
         (0 until event.pointerCount).sumOf { event.getY(it).toDouble() }.toFloat() / event.pointerCount
+
+    private fun averageXExcluding(event: MotionEvent, excludedIndex: Int): Float {
+        val remaining = (0 until event.pointerCount).filter { it != excludedIndex }
+        return remaining.sumOf { event.getX(it).toDouble() }.toFloat() / remaining.size.coerceAtLeast(1)
+    }
+
+    private fun averageYExcluding(event: MotionEvent, excludedIndex: Int): Float {
+        val remaining = (0 until event.pointerCount).filter { it != excludedIndex }
+        return remaining.sumOf { event.getY(it).toDouble() }.toFloat() / remaining.size.coerceAtLeast(1)
+    }
 
     override fun onDetachedFromWindow() {
         bitmap?.recycle()

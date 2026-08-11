@@ -5,6 +5,16 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
 
+if ! command -v kotlinc >/dev/null 2>&1 || ! command -v java >/dev/null 2>&1; then
+    INTERPRETER="$ROOT/feature/vnc/src/main/kotlin/com/remotex/feature/vnc/input/TrackpadGestureInterpreter.kt"
+    grep -Fq 'pointerSpeed: Float = 1.15f' "$INTERPRETER"
+    grep -Fq 'acceleration: Float = 0.55f' "$INTERPRETER"
+    grep -Fq 'accelerationDistance: Float = 80f' "$INTERPRETER"
+    grep -Fq 'roundToInt()' "$INTERPRETER"
+    echo 'VNC trackpad polish source check: OK (kotlinc/java unavailable; runtime harness skipped)'
+    exit 0
+fi
+
 cat > "$TMP/TestMain.kt" <<'KOTLIN'
 import com.remotex.feature.vnc.input.TrackpadGestureInterpreter
 import com.remotex.feature.vnc.input.TrackpadResult

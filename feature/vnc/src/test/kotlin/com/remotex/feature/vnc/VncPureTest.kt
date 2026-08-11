@@ -1,6 +1,7 @@
 package com.remotex.feature.vnc
 
 import com.remotex.feature.vnc.input.TrackpadGestureInterpreter
+import com.remotex.feature.vnc.input.TrackpadTouchGuard
 import com.remotex.feature.vnc.input.TrackpadResult
 import com.remotex.feature.vnc.protocol.RfbAuth
 import com.remotex.feature.vnc.protocol.RfbPixelFormat
@@ -45,6 +46,40 @@ class VncCoreTest {
         )
         assertEquals(TrackpadResult.Pointer(111, 100, 0), trackpad.move(1, 10f, 0f, 100, 100, 1920, 1080))
         assertEquals(TrackpadResult.Pointer(160, 100, 0), trackpad.move(1, 40f, 0f, 100, 100, 1920, 1080))
+    }
+
+
+    @Test
+    fun trackpad_microJitterDoesNotDriftTowardTopLeft() {
+        val trackpad = TrackpadGestureInterpreter(pointerSpeed = 1f, acceleration = 0f)
+        var x = 500
+        var y = 500
+        repeat(40) {
+            trackpad.move(1, -0.2f, -0.2f, x, y, 1920, 1080).also { x = it.x; y = it.y }
+            trackpad.move(1, 0.2f, 0.2f, x, y, 1920, 1080).also { x = it.x; y = it.y }
+        }
+        assertEquals(500, x)
+        assertEquals(500, y)
+    }
+
+    @Test
+    fun trackpad_scrollUsesNaturalDirection() {
+        val trackpad = TrackpadGestureInterpreter(pointerSpeed = 1f, acceleration = 0f)
+        assertEquals(TrackpadResult.Scroll(0, 1), trackpad.scroll(0f, -40f, 40f))
+        trackpad.resetGesture()
+        assertEquals(TrackpadResult.Scroll(0, -1), trackpad.scroll(0f, 40f, 40f))
+    }
+
+    @Test
+    fun trackpad_doesNotResumePointerMovementMidMultitouchGesture() {
+        val guard = TrackpadTouchGuard()
+        guard.beginGesture()
+        assertTrue(guard.canMovePointer(1))
+        guard.observePointerCount(2)
+        assertTrue(!guard.canMovePointer(1))
+        guard.endGesture()
+        guard.beginGesture()
+        assertTrue(guard.canMovePointer(1))
     }
 
     @Test

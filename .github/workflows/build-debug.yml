@@ -90,6 +90,12 @@ jobs:
       - name: Check stable debug signing
         run: bash ./scripts/tests/check-stable-debug-signing.sh
 
+      - name: Check VNC polish source
+        run: bash ./scripts/tests/check-vnc-polish-source.sh
+
+      - name: Check VNC input stability
+        run: bash ./scripts/tests/check-vnc-input-stability.sh
+
       - name: Unit tests, lint, and debug APK
         run: gradle --no-daemon testDebugUnitTest lintDebug assembleDebug --stacktrace
 

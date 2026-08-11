@@ -33,5 +33,5 @@ sealed interface VncInputEvent {
     data class Clipboard(val text: String) : VncInputEvent
 }
 
-enum class VncScaleMode { FIT_SCREEN, ORIGINAL_SIZE, STRETCH }
+enum class VncScaleMode { FIT_SCREEN, FILL_SCREEN, ORIGINAL_SIZE, STRETCH }
 enum class VncInputMode { TRACKPAD, DIRECT_TOUCH }

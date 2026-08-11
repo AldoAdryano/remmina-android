@@ -1,5 +1,7 @@
 package com.remotex.feature.vnc.input
 
+import kotlin.math.hypot
+
 sealed interface TrackpadResult {
     data class Pointer(val x: Int, val y: Int, val buttonsMask: Int) : TrackpadResult
     data class PointerButton(val buttonsMask: Int) : TrackpadResult
@@ -7,8 +9,15 @@ sealed interface TrackpadResult {
 }
 
 class TrackpadGestureInterpreter(
-    private val pointerSpeed: Float = 1.25f,
+    private val pointerSpeed: Float = 1.15f,
+    private val acceleration: Float = 0.55f,
+    private val accelerationDistance: Float = 80f,
 ) {
+    init {
+        require(pointerSpeed > 0f)
+        require(acceleration >= 0f)
+        require(accelerationDistance > 0f)
+    }
     fun move(
         fingers: Int,
         dx: Float,
@@ -20,8 +29,11 @@ class TrackpadGestureInterpreter(
         buttonsMask: Int = 0,
     ): TrackpadResult.Pointer {
         require(fingers == 1)
-        val x = (currentRemoteX + dx * pointerSpeed).toInt().coerceIn(0, (framebufferWidth - 1).coerceAtLeast(0))
-        val y = (currentRemoteY + dy * pointerSpeed).toInt().coerceIn(0, (framebufferHeight - 1).coerceAtLeast(0))
+        val distance = hypot(dx, dy)
+        val accelerationRatio = (distance / accelerationDistance).coerceIn(0f, 1f)
+        val multiplier = pointerSpeed * (1f + acceleration * accelerationRatio)
+        val x = (currentRemoteX + dx * multiplier).toInt().coerceIn(0, (framebufferWidth - 1).coerceAtLeast(0))
+        val y = (currentRemoteY + dy * multiplier).toInt().coerceIn(0, (framebufferHeight - 1).coerceAtLeast(0))
         return TrackpadResult.Pointer(x, y, buttonsMask)
     }
 

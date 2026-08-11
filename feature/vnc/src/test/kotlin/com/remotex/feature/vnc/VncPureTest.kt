@@ -29,11 +29,22 @@ class VncCoreTest {
 
     @Test
     fun trackpad_mapsMovementAndRightClick() {
-        val trackpad = TrackpadGestureInterpreter(pointerSpeed = 1f)
+        val trackpad = TrackpadGestureInterpreter(pointerSpeed = 1f, acceleration = 0f)
         assertEquals(TrackpadResult.Pointer(125, 90, 0), trackpad.move(1, 25f, -10f, 100, 100, 1920, 1080))
         assertEquals(TrackpadResult.Pointer(0, 0, 0), trackpad.move(1, -500f, -500f, 10, 10, 1920, 1080))
         assertEquals(listOf(TrackpadResult.PointerButton(1), TrackpadResult.PointerButton(0)), trackpad.leftTap())
         assertEquals(listOf(TrackpadResult.PointerButton(4), TrackpadResult.PointerButton(0)), trackpad.rightTap())
+    }
+
+    @Test
+    fun trackpad_acceleratesLongSwipesButKeepsShortMovesPrecise() {
+        val trackpad = TrackpadGestureInterpreter(
+            pointerSpeed = 1f,
+            acceleration = 0.5f,
+            accelerationDistance = 40f,
+        )
+        assertEquals(TrackpadResult.Pointer(111, 100, 0), trackpad.move(1, 10f, 0f, 100, 100, 1920, 1080))
+        assertEquals(TrackpadResult.Pointer(160, 100, 0), trackpad.move(1, 40f, 0f, 100, 100, 1920, 1080))
     }
 
     @Test

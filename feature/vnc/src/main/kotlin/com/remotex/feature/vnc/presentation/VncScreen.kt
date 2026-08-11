@@ -7,27 +7,40 @@ import android.content.Context
 import android.content.pm.ActivityInfo
 import android.net.wifi.WifiManager
 import android.view.WindowManager
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -39,6 +52,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.view.WindowCompat
@@ -50,6 +64,7 @@ import com.remotex.feature.vnc.domain.VncScaleMode
 import com.remotex.feature.vnc.domain.VncSessionState
 import com.remotex.feature.vnc.input.KeySymMapper
 import com.remotex.feature.vnc.screenshot.VncScreenshotSaver
+import kotlinx.coroutines.delay
 
 @Composable
 fun VncScreen(
@@ -68,7 +83,23 @@ fun VncScreen(
     var hiddenText by remember { mutableStateOf("") }
     var statusMessage by remember { mutableStateOf<String?>(null) }
     var armedModifiers by remember { mutableStateOf(emptySet<Int>()) }
-    var fullscreen by remember { mutableStateOf(false) }
+    var fullscreen by remember { mutableStateOf(true) }
+    var controlsVisible by remember { mutableStateOf(true) }
+    var controlsEpoch by remember { mutableIntStateOf(0) }
+
+    fun keepControlsVisible() {
+        controlsVisible = true
+        controlsEpoch += 1
+    }
+
+    fun closeSession() {
+        viewModel.disconnect()
+        onBack()
+    }
+
+    DisposableEffect(viewModel) {
+        onDispose { viewModel.disconnect() }
+    }
 
     DisposableEffect(activity) {
         activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
@@ -112,6 +143,23 @@ fun VncScreen(
         onDispose { runCatching { if (wifiLock?.isHeld == true) wifiLock.release() } }
     }
 
+    LaunchedEffect(connected) {
+        if (connected) keepControlsVisible()
+    }
+
+    LaunchedEffect(controlsVisible, controlsEpoch, connected) {
+        if (controlsVisible && connected) {
+            delay(3_500)
+            controlsVisible = false
+        }
+    }
+
+    LaunchedEffect(statusMessage) {
+        val message = statusMessage ?: return@LaunchedEffect
+        delay(2_500)
+        if (statusMessage == message) statusMessage = null
+    }
+
     LaunchedEffect(viewModel, context) {
         viewModel.remoteClipboard.collect { text ->
             if (text.isNotEmpty()) {
@@ -134,7 +182,18 @@ fun VncScreen(
         armedModifiers = if (keysym in armedModifiers) armedModifiers - keysym else armedModifiers + keysym
     }
 
-    Column(
+    fun cycleScaleMode() {
+        viewModel.setScaleMode(
+            when (scaleMode) {
+                VncScaleMode.FIT_SCREEN -> VncScaleMode.FILL_SCREEN
+                VncScaleMode.FILL_SCREEN -> VncScaleMode.ORIGINAL_SIZE
+                VncScaleMode.ORIGINAL_SIZE -> VncScaleMode.STRETCH
+                VncScaleMode.STRETCH -> VncScaleMode.FIT_SCREEN
+            },
+        )
+    }
+
+    Box(
         Modifier
             .fillMaxSize()
             .background(Color.Black)
@@ -144,136 +203,223 @@ fun VncScreen(
                 true
             },
     ) {
-        Row(
-            Modifier
-                .fillMaxWidth()
-                .background(MaterialTheme.colorScheme.surface)
-                .horizontalScroll(rememberScrollState())
-                .padding(4.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            FilledTonalButton(onClick = onBack) { Text("← $title") }
-            ModifierButton("Ctrl", KeySymMapper.CTRL_L in armedModifiers) { toggleModifier(KeySymMapper.CTRL_L) }
-            ModifierButton("Alt", KeySymMapper.ALT_L in armedModifiers) { toggleModifier(KeySymMapper.ALT_L) }
-            ModifierButton("Shift", KeySymMapper.SHIFT_L in armedModifiers) { toggleModifier(KeySymMapper.SHIFT_L) }
-            ModifierButton("Super", KeySymMapper.SUPER_L in armedModifiers) { toggleModifier(KeySymMapper.SUPER_L) }
-            ToolButton("Tab") { dispatchKey(KeySymMapper.TAB) }
-            ToolButton("Esc") { dispatchKey(KeySymMapper.ESC) }
-            ToolButton(if (inputMode == VncInputMode.TRACKPAD) "Trackpad" else "Sentuh") {
-                viewModel.setInputMode(
-                    if (inputMode == VncInputMode.TRACKPAD) VncInputMode.DIRECT_TOUCH else VncInputMode.TRACKPAD,
-                )
-            }
-            ToolButton(
-                when (scaleMode) {
-                    VncScaleMode.FIT_SCREEN -> "Pas Layar"
-                    VncScaleMode.ORIGINAL_SIZE -> "Asli"
-                    VncScaleMode.STRETCH -> "Regang"
-                },
+        AndroidView(
+            factory = { ctx ->
+                VncSurfaceView(ctx).apply {
+                    onInput = viewModel::send
+                    onKeyboardRequested = {
+                        focusRequester.requestFocus()
+                        keyboardController?.show()
+                    }
+                }
+            },
+            modifier = Modifier.fillMaxSize(),
+            update = { view ->
+                view.inputMode = inputMode
+                view.scaleMode = scaleMode
+                frame?.let(view::setFrame)
+            },
+        )
+
+        when (val current = state) {
+            VncSessionState.Idle,
+            VncSessionState.Connecting,
+            -> CircularProgressIndicator(Modifier.align(Alignment.Center))
+
+            is VncSessionState.Reconnecting -> StatusSurface(
+                text = "Menyambung ulang ${current.attempt}/3…",
+                modifier = Modifier.align(Alignment.Center),
+            )
+
+            is VncSessionState.Failed -> Surface(
+                modifier = Modifier.align(Alignment.Center).padding(24.dp),
+                shape = RoundedCornerShape(18.dp),
+                color = MaterialTheme.colorScheme.surface.copy(alpha = 0.94f),
             ) {
-                viewModel.setScaleMode(
-                    when (scaleMode) {
-                        VncScaleMode.FIT_SCREEN -> VncScaleMode.ORIGINAL_SIZE
-                        VncScaleMode.ORIGINAL_SIZE -> VncScaleMode.STRETCH
-                        VncScaleMode.STRETCH -> VncScaleMode.FIT_SCREEN
-                    },
-                )
-            }
-            ToolButton(if (fullscreen) "Keluar Fullscreen" else "Fullscreen") { fullscreen = !fullscreen }
-            ToolButton("Keyboard") {
-                focusRequester.requestFocus()
-                keyboardController?.show()
-            }
-            ToolButton("Kirim Clipboard") {
-                val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                val text = clipboard.primaryClip?.getItemAt(0)?.coerceToText(context)?.toString().orEmpty()
-                if (text.isNotEmpty()) viewModel.send(VncInputEvent.Clipboard(text))
-            }
-            ToolButton("Screenshot") {
-                val current = frame
-                if (current != null) {
-                    statusMessage = VncScreenshotSaver(context).save(current).fold(
-                        onSuccess = { "Tersimpan: $it" },
-                        onFailure = { "Screenshot gagal: ${it.message}" },
-                    )
+                androidx.compose.foundation.layout.Column(
+                    modifier = Modifier.padding(18.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                ) {
+                    Text(current.reason)
+                    Button(onClick = viewModel::reconnectNow) { Text("Sambungkan ulang") }
                 }
             }
-            ToolButton("Putuskan") {
-                viewModel.disconnect()
-                onBack()
+
+            else -> Unit
+        }
+
+        AnimatedVisibility(
+            visible = controlsVisible,
+            modifier = Modifier
+                .align(Alignment.TopCenter)
+                .fillMaxWidth()
+                .padding(start = 8.dp, end = 52.dp, top = 8.dp),
+            enter = fadeIn() + slideInVertically { -it / 2 },
+            exit = fadeOut() + slideOutVertically { -it / 2 },
+        ) {
+            Surface(
+                shape = RoundedCornerShape(18.dp),
+                color = MaterialTheme.colorScheme.surface.copy(alpha = 0.94f),
+                tonalElevation = 6.dp,
+                shadowElevation = 8.dp,
+            ) {
+                Row(
+                    Modifier
+                        .fillMaxWidth()
+                        .horizontalScroll(rememberScrollState())
+                        .padding(horizontal = 6.dp, vertical = 3.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    FilledTonalButton(onClick = { keepControlsVisible(); closeSession() }) {
+                        Text("←", style = MaterialTheme.typography.titleMedium)
+                    }
+                    Text(
+                        title,
+                        modifier = Modifier.padding(horizontal = 8.dp),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    ModifierButton("Ctrl", KeySymMapper.CTRL_L in armedModifiers) {
+                        keepControlsVisible(); toggleModifier(KeySymMapper.CTRL_L)
+                    }
+                    ModifierButton("Alt", KeySymMapper.ALT_L in armedModifiers) {
+                        keepControlsVisible(); toggleModifier(KeySymMapper.ALT_L)
+                    }
+                    ModifierButton("Shift", KeySymMapper.SHIFT_L in armedModifiers) {
+                        keepControlsVisible(); toggleModifier(KeySymMapper.SHIFT_L)
+                    }
+                    ModifierButton("Super", KeySymMapper.SUPER_L in armedModifiers) {
+                        keepControlsVisible(); toggleModifier(KeySymMapper.SUPER_L)
+                    }
+                    ToolButton("Tab") { keepControlsVisible(); dispatchKey(KeySymMapper.TAB) }
+                    ToolButton("Esc") { keepControlsVisible(); dispatchKey(KeySymMapper.ESC) }
+                    ToolButton(if (inputMode == VncInputMode.TRACKPAD) "Trackpad" else "Sentuh") {
+                        keepControlsVisible()
+                        viewModel.setInputMode(
+                            if (inputMode == VncInputMode.TRACKPAD) VncInputMode.DIRECT_TOUCH else VncInputMode.TRACKPAD,
+                        )
+                    }
+                    ToolButton(
+                        when (scaleMode) {
+                            VncScaleMode.FIT_SCREEN -> "Pas Layar"
+                            VncScaleMode.FILL_SCREEN -> "Isi Layar"
+                            VncScaleMode.ORIGINAL_SIZE -> "Asli"
+                            VncScaleMode.STRETCH -> "Regang"
+                        },
+                    ) {
+                        keepControlsVisible()
+                        cycleScaleMode()
+                    }
+                    ToolButton(if (fullscreen) "Jendela" else "Fullscreen") {
+                        keepControlsVisible()
+                        fullscreen = !fullscreen
+                    }
+                    ToolButton("Keyboard") {
+                        keepControlsVisible()
+                        focusRequester.requestFocus()
+                        keyboardController?.show()
+                    }
+                    ToolButton("Clipboard") {
+                        keepControlsVisible()
+                        val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                        val text = clipboard.primaryClip?.getItemAt(0)?.coerceToText(context)?.toString().orEmpty()
+                        if (text.isNotEmpty()) {
+                            viewModel.send(VncInputEvent.Clipboard(text))
+                            statusMessage = "Clipboard dikirim"
+                        }
+                    }
+                    ToolButton("Screenshot") {
+                        keepControlsVisible()
+                        val current = frame
+                        if (current != null) {
+                            statusMessage = VncScreenshotSaver(context).save(current).fold(
+                                onSuccess = { "Tersimpan: $it" },
+                                onFailure = { "Screenshot gagal: ${it.message}" },
+                            )
+                        }
+                    }
+                    ToolButton("Putuskan") { keepControlsVisible(); closeSession() }
+                }
             }
         }
 
-        Box(Modifier.weight(1f).fillMaxWidth()) {
-            AndroidView(
-                factory = { ctx ->
-                    VncSurfaceView(ctx).apply {
-                        onInput = viewModel::send
-                        onKeyboardRequested = {
-                            focusRequester.requestFocus()
-                            keyboardController?.show()
-                        }
-                    }
-                },
-                modifier = Modifier.fillMaxSize(),
-                update = { view ->
-                    view.inputMode = inputMode
-                    view.scaleMode = scaleMode
-                    frame?.let(view::setFrame)
-                },
+        VncControlsHandle(
+            controlsVisible = controlsVisible,
+            onClick = {
+                controlsVisible = !controlsVisible
+                if (controlsVisible) controlsEpoch += 1
+            },
+            modifier = Modifier.align(Alignment.TopEnd).padding(8.dp),
+        )
+
+        statusMessage?.let {
+            StatusSurface(
+                text = it,
+                modifier = Modifier.align(Alignment.BottomCenter).padding(12.dp),
             )
-            when (val current = state) {
-                VncSessionState.Idle,
-                VncSessionState.Connecting,
-                -> CircularProgressIndicator(Modifier.align(Alignment.Center))
+        }
 
-                is VncSessionState.Reconnecting -> Text(
-                    "Menyambung ulang ${current.attempt}/3…",
-                    color = Color.White,
-                    modifier = Modifier.align(Alignment.Center),
-                )
+        BasicTextField(
+            value = hiddenText,
+            onValueChange = { value ->
+                val newText = if (value.startsWith(hiddenText)) value.removePrefix(hiddenText) else value
+                newText.forEach { char -> dispatchKey(char.code) }
+                hiddenText = value.takeLast(32)
+            },
+            modifier = Modifier
+                .align(Alignment.BottomStart)
+                .height(1.dp)
+                .focusRequester(focusRequester),
+            textStyle = androidx.compose.ui.text.TextStyle(color = Color.Transparent),
+        )
+    }
+}
 
-                is VncSessionState.Failed -> Column(
-                    Modifier.align(Alignment.Center),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                ) {
-                    Text(current.reason, color = Color.White)
-                    Button(onClick = viewModel::reconnectNow) { Text("Sambungkan ulang") }
-                }
-
-                else -> Unit
-            }
-            statusMessage?.let {
-                Text(
-                    it,
-                    color = Color.White,
-                    modifier = Modifier.align(Alignment.BottomCenter).padding(8.dp),
-                )
-            }
-            BasicTextField(
-                value = hiddenText,
-                onValueChange = { value ->
-                    val newText = if (value.startsWith(hiddenText)) value.removePrefix(hiddenText) else value
-                    newText.forEach { char -> dispatchKey(char.code) }
-                    hiddenText = value.takeLast(32)
-                },
-                modifier = Modifier
-                    .align(Alignment.BottomStart)
-                    .height(1.dp)
-                    .focusRequester(focusRequester),
-                textStyle = androidx.compose.ui.text.TextStyle(color = Color.Transparent),
+@Composable
+private fun VncControlsHandle(
+    controlsVisible: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Surface(
+        modifier = modifier,
+        shape = CircleShape,
+        color = Color.Black.copy(alpha = 0.58f),
+        shadowElevation = 6.dp,
+    ) {
+        IconButton(onClick = onClick) {
+            Icon(
+                Icons.Default.MoreVert,
+                contentDescription = if (controlsVisible) "Sembunyikan kontrol" else "Tampilkan kontrol",
+                tint = Color.White,
             )
         }
     }
 }
 
 @Composable
+private fun StatusSurface(text: String, modifier: Modifier = Modifier) {
+    Surface(
+        modifier = modifier,
+        shape = RoundedCornerShape(50),
+        color = Color.Black.copy(alpha = 0.72f),
+    ) {
+        Text(
+            text,
+            color = Color.White,
+            modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
+            style = MaterialTheme.typography.bodyMedium,
+        )
+    }
+}
+
+@Composable
 private fun ToolButton(label: String, onClick: () -> Unit) {
-    androidx.compose.material3.TextButton(onClick = onClick) { Text(label) }
+    TextButton(onClick = onClick) { Text(label) }
 }
 
 @Composable
 private fun ModifierButton(label: String, armed: Boolean, onClick: () -> Unit) {
     if (armed) FilledTonalButton(onClick = onClick) { Text(label) }
-    else androidx.compose.material3.TextButton(onClick = onClick) { Text(label) }
+    else TextButton(onClick = onClick) { Text(label) }
 }

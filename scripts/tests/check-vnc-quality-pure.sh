@@ -11,7 +11,10 @@ import com.remotex.feature.vnc.quality.profileFor
 fun main() {
     check(VncQualityMode.BALANCED.profileFor().pixelFormat.bitsPerPixel == 32)
     check(VncQualityMode.PERFORMANCE.profileFor().pixelFormat.bitsPerPixel == 16)
-    check(VncQualityMode.HIGH.profileFor().preferRaw)
+    check(!VncQualityMode.HIGH.profileFor().preferRaw)
+    check(VncQualityMode.BALANCED.profileFor().tightJpegQuality == 7)
+    check(VncQualityMode.PERFORMANCE.profileFor().tightJpegQuality == 4)
+    check(VncQualityMode.HIGH.profileFor().tightJpegQuality == 9)
 
     val auto = AdaptiveQualityController()
     check(auto.effectiveMode == VncQualityMode.BALANCED)

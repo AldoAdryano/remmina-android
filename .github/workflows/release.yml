@@ -110,6 +110,15 @@ jobs:
           bash ./scripts/tests/check-vnc-quality-pure.sh
           bash ./scripts/tests/check-vnc-quality-source.sh
 
+      - name: Check VNC soft keyboard Enter
+        run: bash ./scripts/tests/check-vnc-soft-keyboard-enter.sh
+
+      - name: Check VNC Tight video pipeline
+        run: bash ./scripts/tests/check-vnc-tight-video.sh
+
+      - name: Check remote audio sync
+        run: bash ./scripts/tests/check-remote-audio-sync.sh
+
       - name: Resolve Android version name
         shell: bash
         run: echo "REMOTEX_VERSION_NAME=${RELEASE_TAG#v}" >> "$GITHUB_ENV"

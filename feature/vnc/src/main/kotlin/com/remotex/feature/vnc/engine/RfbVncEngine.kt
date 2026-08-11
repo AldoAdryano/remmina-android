@@ -8,6 +8,7 @@ import com.remotex.feature.vnc.input.TrackpadGestureInterpreter
 import com.remotex.feature.vnc.protocol.HextileDecoder
 import com.remotex.feature.vnc.protocol.RfbAuth
 import com.remotex.feature.vnc.protocol.RfbPixelFormat
+import com.remotex.feature.vnc.protocol.TightDecoder
 import com.remotex.feature.vnc.protocol.readLengthPrefixedText
 import com.remotex.feature.vnc.protocol.readS32
 import com.remotex.feature.vnc.protocol.readU16
@@ -79,6 +80,7 @@ class RfbVncEngine(
     private var appliedQuality = VncQualityMode.BALANCED
     private var pixelFormat = RfbPixelFormat.remoteXDefault()
     private var hextileDecoder = HextileDecoder(pixelFormat)
+    private var tightDecoder = TightDecoder(pixelFormat)
     private val adaptiveQuality = AdaptiveQualityController()
     private var fpsWindowStartedNanos = System.nanoTime()
     private var changedFramesInWindow = 0
@@ -164,6 +166,7 @@ class RfbVncEngine(
         input = null
         output = null
         socket = null
+        tightDecoder.close()
         if (markClosed) _state.value = VncSessionState.Closed
     }
 
@@ -213,7 +216,7 @@ class RfbVncEngine(
         resetPerformanceWindow()
         applyProfileLocally(requestedEffectiveQuality)
         sendSetPixelFormat(output, pixelFormat)
-        sendSetEncodings(output, requestedEffectiveQuality.profileFor().preferRaw)
+        sendSetEncodings(output, requestedEffectiveQuality.profileFor())
         requestFramebufferUpdate(output, incremental = false)
         _state.value = VncSessionState.Connected(width, height, desktopName)
     }
@@ -282,12 +285,17 @@ class RfbVncEngine(
         output.flush()
     }
 
-    private fun sendSetEncodings(output: DataOutputStream, preferRaw: Boolean) {
-        val encodings = if (preferRaw) {
-            intArrayOf(ENCODING_RAW, ENCODING_COPY_RECT, ENCODING_HEXTILE, ENCODING_DESKTOP_SIZE, ENCODING_LAST_RECT)
-        } else {
-            intArrayOf(ENCODING_HEXTILE, ENCODING_COPY_RECT, ENCODING_RAW, ENCODING_DESKTOP_SIZE, ENCODING_LAST_RECT)
-        }
+    private fun sendSetEncodings(output: DataOutputStream, profile: com.remotex.feature.vnc.quality.VncQualityProfile) {
+        val encodings = intArrayOf(
+            ENCODING_TIGHT,
+            ENCODING_HEXTILE,
+            ENCODING_COPY_RECT,
+            ENCODING_RAW,
+            ENCODING_COMPRESS_LEVEL_0 + profile.tightCompressionLevel.coerceIn(0, 9),
+            ENCODING_QUALITY_LEVEL_0 + profile.tightJpegQuality.coerceIn(0, 9),
+            ENCODING_DESKTOP_SIZE,
+            ENCODING_LAST_RECT,
+        )
         output.writeByte(2)
         output.writeByte(0)
         output.writeU16(encodings.size)
@@ -365,6 +373,22 @@ class RfbVncEngine(
                     dirtyRight = maxOf(dirtyRight, x + width)
                     dirtyBottom = maxOf(dirtyBottom, y + height)
                 }
+                ENCODING_TIGHT -> {
+                    tightDecoder.decodeRectangle(
+                        input = input,
+                        framebuffer = framebuffer,
+                        framebufferWidth = framebufferWidth,
+                        framebufferHeight = framebufferHeight,
+                        x = x,
+                        y = y,
+                        width = width,
+                        height = height,
+                    )
+                    dirtyLeft = minOf(dirtyLeft, x)
+                    dirtyTop = minOf(dirtyTop, y)
+                    dirtyRight = maxOf(dirtyRight, x + width)
+                    dirtyBottom = maxOf(dirtyBottom, y + height)
+                }
                 ENCODING_COPY_RECT -> {
                     val srcX = input.readU16()
                     val srcY = input.readU16()
@@ -385,24 +409,28 @@ class RfbVncEngine(
         }
 
         val changed = dirtyRight > dirtyLeft && dirtyBottom > dirtyTop
+        if (changed) changedFramesInWindow += 1
+        updatePerformanceWindow()
+
+        // RFB is client-pull. Ask for the next update before doing the UI snapshot so
+        // server-side capture/encoding and network transfer can overlap local delivery.
+        synchronized(writerLock) {
+            val qualityChanged = applyPendingQuality(output)
+            requestFramebufferUpdate(output, incremental = !qualityChanged)
+        }
+
         if (changed) {
-            changedFramesInWindow += 1
-            _frames.emit(
+            _frames.tryEmit(
                 VncFrame(
                     width = framebufferWidth,
                     height = framebufferHeight,
-                    argb = framebuffer.copyOf(),
+                    argb = snapshotDirtyRegion(dirtyLeft, dirtyTop, dirtyRight, dirtyBottom),
                     dirtyLeft = dirtyLeft,
                     dirtyTop = dirtyTop,
                     dirtyRight = dirtyRight,
                     dirtyBottom = dirtyBottom,
                 ),
             )
-        }
-        updatePerformanceWindow()
-        synchronized(writerLock) {
-            val qualityChanged = applyPendingQuality(output)
-            requestFramebufferUpdate(output, incremental = !qualityChanged)
         }
     }
 
@@ -436,7 +464,7 @@ class RfbVncEngine(
         if (desired == appliedQuality) return false
         applyProfileLocally(desired)
         sendSetPixelFormat(output, pixelFormat)
-        sendSetEncodings(output, desired.profileFor().preferRaw)
+        sendSetEncodings(output, desired.profileFor())
         _performanceStats.value = _performanceStats.value.copy(activeQuality = appliedQuality)
         return true
     }
@@ -446,8 +474,26 @@ class RfbVncEngine(
         val profile = effective.profileFor()
         pixelFormat = profile.pixelFormat
         hextileDecoder = HextileDecoder(pixelFormat)
+        tightDecoder.close()
+        tightDecoder = TightDecoder(pixelFormat)
         appliedQuality = effective
         _performanceStats.value = _performanceStats.value.copy(activeQuality = effective)
+    }
+
+    private fun snapshotDirtyRegion(left: Int, top: Int, right: Int, bottom: Int): IntArray {
+        val width = right - left
+        val height = bottom - top
+        require(width > 0 && height > 0)
+        val snapshot = IntArray(Math.multiplyExact(width, height))
+        repeat(height) { row ->
+            framebuffer.copyInto(
+                destination = snapshot,
+                destinationOffset = row * width,
+                startIndex = (top + row) * framebufferWidth + left,
+                endIndex = (top + row) * framebufferWidth + right,
+            )
+        }
+        return snapshot
     }
 
     private fun readRawRectangle(input: DataInputStream, x: Int, y: Int, width: Int, height: Int) {
@@ -537,6 +583,9 @@ class RfbVncEngine(
         private const val ENCODING_RAW = 0
         private const val ENCODING_COPY_RECT = 1
         private const val ENCODING_HEXTILE = 5
+        private const val ENCODING_TIGHT = 7
+        private const val ENCODING_COMPRESS_LEVEL_0 = -256
+        private const val ENCODING_QUALITY_LEVEL_0 = -32
         private const val ENCODING_DESKTOP_SIZE = -223
         private const val ENCODING_LAST_RECT = -224
         private const val MAX_CLIPBOARD_BYTES = 1024L * 1024L

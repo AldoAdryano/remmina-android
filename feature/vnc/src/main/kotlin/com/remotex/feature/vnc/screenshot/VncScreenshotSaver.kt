@@ -6,7 +6,6 @@ import android.graphics.Bitmap
 import android.os.Build
 import android.os.Environment
 import android.provider.MediaStore
-import com.remotex.feature.vnc.domain.VncFrame
 import java.io.File
 import java.io.FileOutputStream
 import java.text.SimpleDateFormat
@@ -14,17 +13,17 @@ import java.util.Date
 import java.util.Locale
 
 class VncScreenshotSaver(private val context: Context) {
-    fun save(frame: VncFrame): Result<String> = runCatching {
+    fun save(bitmap: Bitmap): Result<String> = runCatching {
         val name = "RemoteX-${SimpleDateFormat("yyyyMMdd-HHmmss", Locale.US).format(Date())}.png"
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            saveScoped(frame, name)
+            saveScoped(bitmap, name)
         } else {
-            saveLegacyAppStorage(frame, name)
+            saveLegacyAppStorage(bitmap, name)
         }
         name
     }
 
-    private fun saveScoped(frame: VncFrame, name: String) {
+    private fun saveScoped(bitmap: Bitmap, name: String) {
         val values = ContentValues().apply {
             put(MediaStore.Images.Media.DISPLAY_NAME, name)
             put(MediaStore.Images.Media.MIME_TYPE, "image/png")
@@ -35,7 +34,7 @@ class VncScreenshotSaver(private val context: Context) {
         val uri = resolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values)
             ?: error("Tidak dapat membuat file screenshot")
         try {
-            resolver.openOutputStream(uri)?.use { output -> writePng(frame, output) }
+            resolver.openOutputStream(uri)?.use { output -> writePng(bitmap, output) }
                 ?: error("Tidak dapat membuka file screenshot")
             resolver.update(
                 uri,
@@ -49,20 +48,15 @@ class VncScreenshotSaver(private val context: Context) {
         }
     }
 
-    private fun saveLegacyAppStorage(frame: VncFrame, name: String) {
+    private fun saveLegacyAppStorage(bitmap: Bitmap, name: String) {
         val root = requireNotNull(context.getExternalFilesDir(Environment.DIRECTORY_PICTURES)) {
             "Penyimpanan gambar tidak tersedia"
         }
         val directory = File(root, "RemoteX").apply { mkdirs() }
-        FileOutputStream(File(directory, name)).use { output -> writePng(frame, output) }
+        FileOutputStream(File(directory, name)).use { output -> writePng(bitmap, output) }
     }
 
-    private fun writePng(frame: VncFrame, output: java.io.OutputStream) {
-        val bitmap = Bitmap.createBitmap(frame.argb, frame.width, frame.height, Bitmap.Config.ARGB_8888)
-        try {
-            check(bitmap.compress(Bitmap.CompressFormat.PNG, 100, output)) { "Gagal menulis PNG" }
-        } finally {
-            bitmap.recycle()
-        }
+    private fun writePng(bitmap: Bitmap, output: java.io.OutputStream) {
+        check(bitmap.compress(Bitmap.CompressFormat.PNG, 100, output)) { "Gagal menulis PNG" }
     }
 }

@@ -22,8 +22,11 @@ internal class AndroidPcmPlayer(context: Context) : PcmPlayer {
 
     private var track: AudioTrack? = null
     private var focusGranted = false
+    private var targetPrebufferBytes = 0
+    private var prebufferedBytes = 0
+    private var playbackStarted = false
 
-    override suspend fun start() = withContext(Dispatchers.IO) {
+    override suspend fun start(initialDelayMs: Int) = withContext(Dispatchers.IO) {
         stopInternal()
         val channelMask = AudioFormat.CHANNEL_OUT_STEREO
         val minBuffer = AudioTrack.getMinBufferSize(
@@ -32,8 +35,20 @@ internal class AndroidPcmPlayer(context: Context) : PcmPlayer {
             AudioFormat.ENCODING_PCM_16BIT,
         )
         require(minBuffer > 0) { "Perangkat Android tidak mendukung format audio remote" }
-        val targetBuffer = RemoteAudioCommand.RATE_HZ * RemoteAudioCommand.CHANNELS * BYTES_PER_SAMPLE * TARGET_BUFFER_MS / 1_000
-        val bufferSize = maxOf(minBuffer, targetBuffer)
+
+        targetPrebufferBytes = AudioSyncPolicy.pcmBytesForDelay(
+            delayMs = initialDelayMs,
+            rateHz = RemoteAudioCommand.RATE_HZ,
+            channels = RemoteAudioCommand.CHANNELS,
+            bytesPerSample = BYTES_PER_SAMPLE,
+        )
+        val safetyBytes = AudioSyncPolicy.pcmBytesForDelay(
+            delayMs = BUFFER_HEADROOM_MS,
+            rateHz = RemoteAudioCommand.RATE_HZ,
+            channels = RemoteAudioCommand.CHANNELS,
+            bytesPerSample = BYTES_PER_SAMPLE,
+        )
+        val bufferSize = maxOf(minBuffer, targetPrebufferBytes + safetyBytes)
 
         focusGranted = audioManager.requestAudioFocus(focusRequest) == AudioManager.AUDIOFOCUS_REQUEST_GRANTED
         require(focusGranted) { "Audio focus Android tidak tersedia" }
@@ -55,8 +70,10 @@ internal class AndroidPcmPlayer(context: Context) : PcmPlayer {
             created.release()
             "AudioTrack gagal diinisialisasi"
         }
-        created.play()
         track = created
+        prebufferedBytes = 0
+        playbackStarted = targetPrebufferBytes == 0
+        if (playbackStarted) created.play()
     }
 
     override suspend fun write(bytes: ByteArray) = withContext(Dispatchers.IO) {
@@ -68,6 +85,13 @@ internal class AndroidPcmPlayer(context: Context) : PcmPlayer {
             if (written < 0) error("AudioTrack write gagal: $written")
             if (written == 0) break
             offset += written
+            if (!playbackStarted) {
+                prebufferedBytes += written
+                if (prebufferedBytes >= targetPrebufferBytes) {
+                    current.play()
+                    playbackStarted = true
+                }
+            }
         }
     }
 
@@ -82,12 +106,15 @@ internal class AndroidPcmPlayer(context: Context) : PcmPlayer {
             runCatching { current.release() }
         }
         track = null
+        targetPrebufferBytes = 0
+        prebufferedBytes = 0
+        playbackStarted = false
         if (focusGranted) runCatching { audioManager.abandonAudioFocusRequest(focusRequest) }
         focusGranted = false
     }
 
     private companion object {
         const val BYTES_PER_SAMPLE = 2
-        const val TARGET_BUFFER_MS = 60
+        const val BUFFER_HEADROOM_MS = 80
     }
 }

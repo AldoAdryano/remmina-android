@@ -107,6 +107,15 @@ jobs:
           bash ./scripts/tests/check-vnc-quality-pure.sh
           bash ./scripts/tests/check-vnc-quality-source.sh
 
+      - name: Check VNC soft keyboard Enter
+        run: bash ./scripts/tests/check-vnc-soft-keyboard-enter.sh
+
+      - name: Check VNC Tight video pipeline
+        run: bash ./scripts/tests/check-vnc-tight-video.sh
+
+      - name: Check remote audio sync
+        run: bash ./scripts/tests/check-remote-audio-sync.sh
+
       - name: Unit tests, lint, and debug APK
         run: gradle --no-daemon testDebugUnitTest lintDebug assembleDebug --stacktrace
 

@@ -95,10 +95,11 @@ class VncSurfaceView(context: Context) : View(context) {
         val dirtyWidth = frame.dirtyRight - frame.dirtyLeft
         val dirtyHeight = frame.dirtyBottom - frame.dirtyTop
         if (dirtyWidth > 0 && dirtyHeight > 0) {
+            require(frame.argb.size == dirtyWidth * dirtyHeight) { "Invalid VNC dirty frame payload" }
             target.setPixels(
                 frame.argb,
-                frame.dirtyTop * frame.width + frame.dirtyLeft,
-                frame.width,
+                0,
+                dirtyWidth,
                 frame.dirtyLeft,
                 frame.dirtyTop,
                 dirtyWidth,
@@ -107,6 +108,8 @@ class VncSurfaceView(context: Context) : View(context) {
         }
         postInvalidateOnAnimation()
     }
+
+    fun snapshotBitmap(): Bitmap? = bitmap?.copy(Bitmap.Config.ARGB_8888, false)
 
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)

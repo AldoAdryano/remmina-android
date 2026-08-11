@@ -24,7 +24,7 @@ require_pattern 'requestedEffectiveQuality' "$ENGINE" 'engine does not queue qua
 require_pattern 'applyPendingQuality(output)' "$ENGINE" 'quality change is not applied at framebuffer boundary'
 require_pattern 'incremental = !qualityChanged' "$ENGINE" 'quality switch must force non-incremental refresh'
 require_pattern 'hextileDecoder = HextileDecoder(pixelFormat)' "$ENGINE" 'decoder is not recreated for new pixel format'
-require_pattern 'sendSetEncodings(output, desired.profileFor().preferRaw)' "$ENGINE" 'encoding preference is not profile-specific'
+require_pattern 'sendSetEncodings(output, desired.profileFor())' "$ENGINE" 'encoding profile is not applied at framebuffer boundary'
 require_pattern 'VncQualityMode.BALANCED' "$VM" 'ViewModel default is not balanced'
 require_pattern 'fun setQualityMode(mode: VncQualityMode)' "$VM" 'ViewModel quality setter missing'
 require_pattern 'DropdownMenu(' "$SCREEN" 'quality dropdown menu missing'

@@ -12,10 +12,10 @@ class RemoteAudioViewModel(
     val state = engine.state
     private var streamJob: Job? = null
 
-    fun start(spec: SshConnectionSpec) {
+    fun start(spec: SshConnectionSpec, initialDelayMs: Int) {
         if (state.value is RemoteAudioState.Connecting || state.value is RemoteAudioState.Playing) return
         streamJob?.cancel()
-        streamJob = viewModelScope.launch { engine.start(spec) }
+        streamJob = viewModelScope.launch { engine.start(spec, initialDelayMs) }
     }
 
     fun stop() {

@@ -19,6 +19,7 @@ sealed interface VncSessionState {
 data class VncFrame(
     val width: Int,
     val height: Int,
+    /** Pixels for the dirty rectangle, tightly packed row-by-row. */
     val argb: IntArray,
     val dirtyLeft: Int = 0,
     val dirtyTop: Int = 0,

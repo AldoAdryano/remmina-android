@@ -75,7 +75,8 @@ else
   echo 'Remote audio pure test: SKIP (kotlinc tidak tersedia)'
 fi
 
-require_pattern 'TARGET_BUFFER_MS = 60' "$AUDIO_PLAYER" 'audio target buffer must be 60 ms'
+require_pattern 'targetPrebufferBytes' "$AUDIO_PLAYER" 'audio player prebuffer is missing'
+require_pattern 'AudioSyncPolicy.pcmBytesForDelay' "$AUDIO_PLAYER" 'audio delay is not converted into PCM bytes'
 require_pattern 'AudioTrack.PERFORMANCE_MODE_LOW_LATENCY' "$AUDIO_PLAYER" 'AudioTrack low-latency performance mode is missing'
 require_pattern 'const val BUFFER_SIZE = 4 * 1024' "$EXEC_IMPL" 'SSH exec PCM chunks should be 4 KiB'
 

@@ -30,7 +30,7 @@ class SshPcmAudioEngine private constructor(
     private var exec: ExecChannel? = null
     @Volatile private var explicitStop = false
 
-    override suspend fun start(spec: SshConnectionSpec) {
+    override suspend fun start(spec: SshConnectionSpec, initialDelayMs: Int) {
         stopInternal(setIdle = false)
         explicitStop = false
         _state.value = RemoteAudioState.Connecting
@@ -45,8 +45,8 @@ class SshPcmAudioEngine private constructor(
             session = openedSession
             val openedExec = openedSession.openExec(RemoteAudioCommand.command)
             exec = openedExec
-            player.start()
-            _state.value = RemoteAudioState.Playing
+            player.start(initialDelayMs)
+            _state.value = RemoteAudioState.Playing(initialDelayMs)
 
             coroutineScope {
                 val stderrJob = launch {

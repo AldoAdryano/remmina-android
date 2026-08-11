@@ -31,6 +31,7 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.remotex.core.model.ConnectionProfile
+import com.remotex.feature.audio.AudioSyncPolicy
 import com.remotex.feature.audio.RemoteAudioState
 import com.remotex.feature.audio.RemoteAudioViewModel
 import com.remotex.feature.audio.SshPcmAudioEngine
@@ -152,6 +153,7 @@ private fun VncRoute(profile: ConnectionProfile, container: AppContainer, onBack
         RemoteAudioViewModel(SshPcmAudioEngine(context.applicationContext, container.newSshEngine()))
     }
     val state by vm.sessionState.collectAsState()
+    val performanceStats by vm.performanceStats.collectAsState()
     val audioState by audioVm.state.collectAsState()
     var needsPrompt by remember(profile.id) { mutableStateOf(profile.credentialPolicy == CredentialPolicy.ALWAYS_ASK) }
     var attemptedSaved by remember(profile.id) { mutableStateOf(false) }
@@ -186,7 +188,7 @@ private fun VncRoute(profile: ConnectionProfile, container: AppContainer, onBack
     LaunchedEffect(audioState) {
         audioNotice = when (val current = audioState) {
             RemoteAudioState.Connecting -> "Menyambungkan audio…"
-            RemoteAudioState.Playing -> "Audio remote aktif"
+            is RemoteAudioState.Playing -> "Audio remote aktif • sync ${current.delayMs} ms"
             is RemoteAudioState.Failed -> current.reason
             RemoteAudioState.Idle -> audioNotice
         }
@@ -195,12 +197,17 @@ private fun VncRoute(profile: ConnectionProfile, container: AppContainer, onBack
     fun startAudio(auth: SshAuth) {
         audioNeedsPrompt = false
         audioNotice = null
-        audioVm.start(SshConnectionSpec(profile.host, profile.sshPort, profile.username, auth))
+        val delayMs = AudioSyncPolicy.delayMsForFps(performanceStats.fps)
+        audioVm.start(SshConnectionSpec(profile.host, profile.sshPort, profile.username, auth), delayMs)
     }
 
     fun requestAudio() {
         when (audioState) {
-            RemoteAudioState.Connecting, RemoteAudioState.Playing -> {
+            RemoteAudioState.Connecting -> {
+                audioVm.stop()
+                audioNotice = "Audio dimatikan"
+            }
+            is RemoteAudioState.Playing -> {
                 audioVm.stop()
                 audioNotice = "Audio dimatikan"
             }

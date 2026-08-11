@@ -24,6 +24,8 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material3.Button
@@ -55,6 +57,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -98,6 +101,7 @@ fun VncScreen(
     var controlsVisible by remember { mutableStateOf(true) }
     var controlsEpoch by remember { mutableIntStateOf(0) }
     var qualityMenuExpanded by remember { mutableStateOf(false) }
+    var surfaceView by remember { mutableStateOf<VncSurfaceView?>(null) }
     var requestedOrientation by rememberSaveable {
         mutableStateOf(ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE)
     }
@@ -234,6 +238,7 @@ fun VncScreen(
                         focusRequester.requestFocus()
                         keyboardController?.show()
                     }
+                    surfaceView = this
                 }
             },
             modifier = Modifier.fillMaxSize(),
@@ -315,6 +320,7 @@ fun VncScreen(
                         keepControlsVisible(); toggleModifier(KeySymMapper.SUPER_L)
                     }
                     ToolButton("Tab") { keepControlsVisible(); dispatchKey(KeySymMapper.TAB) }
+                    ToolButton("Enter") { keepControlsVisible(); dispatchKey(KeySymMapper.RETURN) }
                     ToolButton("Esc") { keepControlsVisible(); dispatchKey(KeySymMapper.ESC) }
                     ToolButton(if (inputMode == VncInputMode.TRACKPAD) "Trackpad" else "Sentuh") {
                         keepControlsVisible()
@@ -406,12 +412,13 @@ fun VncScreen(
                     }
                     ToolButton("Screenshot") {
                         keepControlsVisible()
-                        val current = frame
-                        if (current != null) {
-                            statusMessage = VncScreenshotSaver(context).save(current).fold(
+                        val bitmap = surfaceView?.snapshotBitmap()
+                        if (bitmap != null) {
+                            statusMessage = VncScreenshotSaver(context).save(bitmap).fold(
                                 onSuccess = { "Tersimpan: $it" },
                                 onFailure = { "Screenshot gagal: ${it.message}" },
                             )
+                            bitmap.recycle()
                         }
                     }
                     ToolButton("Putuskan") { keepControlsVisible(); closeSession() }
@@ -453,9 +460,22 @@ fun VncScreen(
             value = hiddenText,
             onValueChange = { value ->
                 val newText = if (value.startsWith(hiddenText)) value.removePrefix(hiddenText) else value
-                newText.forEach { char -> dispatchKey(char.code) }
-                hiddenText = value.takeLast(32)
+                newText.forEach { char ->
+                    when (char) {
+                        '\n', '\r' -> dispatchKey(KeySymMapper.RETURN)
+                        else -> dispatchKey(char.code)
+                    }
+                }
+                hiddenText = value.filterNot { it == '\n' || it == '\r' }.takeLast(32)
             },
+            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Default),
+            keyboardActions = KeyboardActions(
+                onDone = { dispatchKey(KeySymMapper.RETURN) },
+                onGo = { dispatchKey(KeySymMapper.RETURN) },
+                onNext = { dispatchKey(KeySymMapper.RETURN) },
+                onSearch = { dispatchKey(KeySymMapper.RETURN) },
+                onSend = { dispatchKey(KeySymMapper.RETURN) },
+            ),
             modifier = Modifier
                 .align(Alignment.BottomStart)
                 .height(1.dp)

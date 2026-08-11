@@ -19,7 +19,7 @@ require_pattern 'ENCODING_HEXTILE' "$ENGINE" 'Hextile encoding is not advertised
 require_pattern 'HextileDecoder(pixelFormat)' "$ENGINE" 'RFB engine does not use Hextile decoder'
 require_pattern '.setPixels(' "$SURFACE" 'surface is not updating a persistent bitmap'
 require_pattern 'postInvalidateOnAnimation()' "$SURFACE" 'surface rendering is not vsync-scheduled'
-require_pattern 'framebuffer.copyOf()' "$ENGINE" 'full snapshots must remain safe under conflated frame delivery'
+require_pattern 'snapshotDirtyRegion(' "$ENGINE" 'engine must snapshot only the changed framebuffer region'
 require_pattern 'postInvalidateOnAnimation()' "$SURFACE" 'surface rendering is not vsync-scheduled'
 
 if command -v kotlinc >/dev/null 2>&1 && command -v java >/dev/null 2>&1; then

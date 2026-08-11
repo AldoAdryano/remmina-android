@@ -7,7 +7,7 @@ object KeySymMapper {
         val unicode = event.unicodeChar
         if (unicode in 0x20..0x7e) return unicode
         return when (event.keyCode) {
-            KeyEvent.KEYCODE_ENTER -> 0xff0d
+            KeyEvent.KEYCODE_ENTER -> RETURN
             KeyEvent.KEYCODE_DEL -> 0xff08
             KeyEvent.KEYCODE_TAB -> 0xff09
             KeyEvent.KEYCODE_ESCAPE -> 0xff1b
@@ -41,6 +41,7 @@ object KeySymMapper {
     const val ALT_L = 0xffe9
     const val SHIFT_L = 0xffe1
     const val SUPER_L = 0xffeb
+    const val RETURN = 0xff0d
     const val TAB = 0xff09
     const val ESC = 0xff1b
 }
